@@ -3,6 +3,7 @@ import { Site } from "./site.ts";
 import type { Activity, Itinerary, Profile, Stop, CrowdEvent } from "./types.ts";
 import { endMin } from "./types.ts";
 import { minutesCount, peopleCount, stationsCount } from "../lib/ar-count.ts";
+import { clock12 } from "../lib/clock-format.ts";
 import { activityTags, fitsVisitor, profileTags } from "../../packages/engine/src/matching.ts";
 
 export function slotStart(act: Activity, earliest: number): number | null {
@@ -808,7 +809,5 @@ export function rankSwaps(
 
 // ------------------------------------------------------------- تنسيق عربي
 export function fmtTime(m: number): string {
-  const h = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+  return clock12(m);
 }

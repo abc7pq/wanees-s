@@ -46,7 +46,7 @@ test("the live board shows quiet zones, delayed shows and operator notices on a 
   await page.goto(`${visitor}/board/${event}`);
   await expect(page.locator("html")).toHaveAttribute("dir", "rtl");
   await expect(page.getByText("مباشر", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("18:00").first()).toBeVisible();
+  await expect(page.getByText("6:00 م").first()).toBeVisible();
 
   const notices = page.getByRole("region", { name: "تنبيهات إدارة الموقع" });
   await expect(notices.getByText("تأخير 25 دقيقة: عرض الدولفيناريوم")).toBeVisible();
@@ -56,7 +56,7 @@ test("the live board shows quiet zones, delayed shows and operator notices on a 
   const shows = page.getByRole("region", { name: "العروض الجاية" });
   const dolphins = shows.getByRole("listitem").filter({ hasText: "عرض الدولفيناريوم" }).first();
   await expect(dolphins).toContainText("متأخر 25 د");
-  await expect(dolphins).toContainText("18:55");
+  await expect(dolphins).toContainText("6:55 م");
   // The closed zone's show is marked cancelled, not silently dropped.
   await expect(shows.getByRole("listitem").filter({ hasText: "عروض إسبانيا المتجولة" }).first()).toContainText("ملغي");
 
@@ -83,10 +83,10 @@ test("a closed venue never claims to be live", async ({ page }) => {
   await page.route(`**/api/v1/events/${event}/crowd`, (route) => route.fulfill({ json: { data: { clock, threshold: 0.75, zones: [] } } }));
   await page.route(`**/api/v1/events/${event}/live`, (route) => route.fulfill({ json: { data: { clock, updates: [] } } }));
   await page.goto(`${visitor}/board/${event}`);
-  await expect(page.getByText(/مغلق الحين · يفتح 17:00/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/مغلق الحين · يفتح 5:00 م/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("مباشر", { exact: true })).toHaveCount(0);
-  // The wall clock shows the real local time (10:10), not the opening time the planner uses.
-  await expect(page.getByText("10:10", { exact: true })).toBeVisible();
+  // The wall clock shows the real local time (10:10 in the morning), not the opening time the planner uses.
+  await expect(page.getByText("10:10 ص", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "عروض الليلة" })).toBeVisible();
   await expect(page.getByText(/قراءات الزحام تقديرية، ليست من حساسات/)).toBeVisible();
 });

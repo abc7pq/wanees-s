@@ -113,8 +113,8 @@ assert.equal(bandFor(0.75, 0.75), "packed");
   assert.equal(board.notices[0].reason.length, 200);
 }
 
-assert.equal(boardClock(1110), "18:30");
-assert.equal(boardClock(1440 + 65), "1:05");
+assert.equal(boardClock(1110), "6:30 م");
+assert.equal(boardClock(1440 + 65), "1:05 ص");
 
 console.log("live board: all assertions passed");
 

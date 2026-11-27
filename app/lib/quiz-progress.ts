@@ -1,4 +1,5 @@
 import { createElement, type ReactNode } from "react";
+import { clockRange12 } from "./clock-format.ts";
 
 export function QuizProgress({ current, total }: { current: number; total: number }) {
   return createElement(
@@ -12,6 +13,7 @@ export function QuizInterestButton({ selected, children, onClick, className }: {
   return createElement("button", { type: "button", className, "aria-pressed": selected, onClick }, children);
 }
 
-export function ItineraryTimeRange({ start, end }: { start: string; end: string }) {
-  return createElement("span", { dir: "ltr", style: { unicodeBidi: "isolate" } }, `${start} – ${end}`);
+/** A stop's time span, read right to left like the sentence around it: «7:00 – 7:20 م». */
+export function ItineraryTimeRange({ start, end }: { start: number; end: number }) {
+  return createElement("span", { dir: "rtl", style: { unicodeBidi: "isolate", whiteSpace: "nowrap" } }, clockRange12(start, end));
 }

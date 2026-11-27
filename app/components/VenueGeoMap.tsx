@@ -12,6 +12,7 @@ import "leaflet/dist/leaflet.css";
 import { planExtent, useVenueGeo, useVenueMapData, type VenueGeo, type VenueMapData } from "./useVenueMapData";
 import { ART_BOUNDS, buildParkSvg, zoneTheme } from "./park-map-art";
 import { BOULEVARD_CABLE_CAR } from "../../packages/engine/src/venue-geometry.ts";
+import { hour12 } from "@/lib/clock-format";
 
 const VenueGoogleMap = dynamic(() => import("./VenueGoogleMap").then((m) => ({ default: m.VenueGoogleMap })), { ssr: false });
 const VenueMap2DFallback = dynamic(() => import("@/components/VenueMap2D").then((m) => ({ default: m.VenueMap2D })), {
@@ -109,7 +110,7 @@ function escapeHtml(value: string) {
 
 /** «أوقات الذروة»: عمود لكل ساعة تشغيل، والساعة الحالية بالقراءة الحية */
 function PopularTimes({ row, threshold }: { row: MapCrowdRow; threshold: number }) {
-  const label = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
+  const label = (hour: number) => hour12(hour);
   return (
     <div className="pm-times" aria-label="أوقات الذروة المتوقعة">
       <span className="pm-times-title">أوقات الذروة</span>
@@ -118,12 +119,12 @@ function PopularTimes({ row, threshold }: { row: MapCrowdRow; threshold: number 
           const tone = crowdTone(entry.level, threshold);
           return (
             <span key={entry.hour} className={`pm-bar${entry.live ? " is-now" : ""}`} style={{ ["--h" as string]: `${Math.max(8, Math.round(entry.level * 100))}%`, ["--c" as string]: TONE_COLOR[tone] }} title={`${label(entry.hour)} · ${TONE_TEXT[tone]}`}>
-              <i /><small>{entry.hour % 2 === 1 ? entry.hour : ""}</small>
+              <i /><small>{entry.hour % 2 === 1 ? entry.hour % 12 || 12 : ""}</small>
             </span>
           );
         })}
       </div>
-      {row.quietestUpcomingHour != null && <span className="pm-quiet">🌙 أهدأ وقت قادم: <b dir="ltr">{label(row.quietestUpcomingHour)}</b></span>}
+      {row.quietestUpcomingHour != null && <span className="pm-quiet">🌙 أهدأ وقت قادم: <b>{label(row.quietestUpcomingHour)}</b></span>}
     </div>
   );
 }

@@ -32,6 +32,7 @@ type DirectionsPayload = { origin: { id: string; name: string }; target: { id: s
 import { firstFutureDemoStop } from "@/lib/demo-event-target";
 import type { IncentiveDisplay } from "@/lib/incentives/types";
 import { ItineraryTimeRange } from "@/lib/quiz-progress";
+import { clock12, clockRange12 } from "@/lib/clock-format";
 import { applyReplanOutcome, sendReplanDecision, STALE_PROPOSAL_MESSAGE } from "@/lib/replan-decision";
 import { preferencesFromSnapshot as savedPreferences } from "@/lib/visitor-preferences";
 import { understandMessage } from "@/lib/visitor-understanding";
@@ -74,7 +75,8 @@ const A2uiSurface = dynamic(() => import("@/components/A2uiSurface").then((m) =>
 
 type GpsFix = Extract<ReturnType<typeof snapVenuePosition>, { status: "ready" }>;
 
-const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+// Every time the visitor reads is 12-hour: «7:00 م».
+const fmt = (m: number) => clock12(m);
 
 
 /** Party size the plan was built for (engine prices are per person); null when the server did not say. */
@@ -92,8 +94,8 @@ function arabicMinutes(n: number) {
 }
 
 function venueTimeLabel(value: string, timeZone: string) {
-  // 24-hour Western digits, matching every other time in the visitor app (17:00, 18:30…).
-  const options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hourCycle: "h23" };
+  // 12-hour with Western digits, matching every other time in the visitor app (5:00 م, 6:30 م…).
+  const options: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit", hourCycle: "h12" };
   try {
     return new Date(value).toLocaleTimeString("ar-SA-u-nu-latn", { ...options, timeZone });
   } catch {
@@ -2349,7 +2351,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
   };
   // The bubble is the reply's opening sentence (the summary); the rest is only spoken.
   const saidLine = voiceReply.replace(/[«»]/g, "").split(/(?<=[.!؟?])\s+/)[0]?.trim() ?? "";
-  const stopTime = (stop: Stop) => `${fmt(stop.start)} – ${fmt(stop.end)}`;
+  const stopTime = (stop: Stop) => clockRange12(stop.start, stop.end);
   const callStop = (stop: Stop, index: number, change: CallStop["change"] = null): CallStop => ({
     id: `${stop.act_id}-${index}`, actId: stop.act_id, name: stop.name, kind: activityKind(stop.act_id), image: activityImage(stop.act_id), time: stopTime(stop), change,
     state: stop.end <= now ? "past" : !closedPreview && stop.start <= now ? "current" : stop === (closedPreview ? firstStop : next) ? "next" : "later",
@@ -2439,7 +2441,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
             </div>
             {headline ? <>
               <strong>{headline.name}</strong>
-              <p className="next-stop-when"><ItineraryTimeRange start={fmt(headline.start)} end={fmt(headline.end)} />{headlineZone && <> · {headlineZone}</>}{!(current && headline.act_id === current.act_id) && headline.walk_min > 0 && <> · {headline.walk_min} د مشي</>}{headline.note && <> · {headline.note}</>}</p>
+              <p className="next-stop-when"><ItineraryTimeRange start={headline.start} end={headline.end} />{headlineZone && <> · {headlineZone}</>}{!(current && headline.act_id === current.act_id) && headline.walk_min > 0 && <> · {headline.walk_min} د مشي</>}{headline.note && <> · {headline.note}</>}</p>
             </> : <p>{guide}</p>}
             {headline && !isPitch && (
               <button type="button" className="cta next-stop-go" onClick={(event) => openDirections(headline.act_id, event.currentTarget)}>
@@ -2516,7 +2518,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
             {callMinimized && voiceOpen && <button type="button" className="btn-icon plan-back" aria-label="ارجع إلى المكالمة" onClick={() => setCallMinimized(false)}><Icon name="chevron" size={20}/></button>}
             <div>
               <h2 id="visitor-itinerary-title">مسارك الليلة</h2>
-              {it.stops.length > 0 && <small dir="ltr">{fmt(it.stops[0].start)} – {fmt(it.stops[it.stops.length - 1].end)}</small>}
+              {it.stops.length > 0 && <small>{clockRange12(it.stops[0].start, it.stops[it.stops.length - 1].end)}</small>}
             </div>
             {modeRef.current === "durable" && liveStatus === "live" && (venueOpen || isPitch) && <span className="plan-live" aria-hidden="true"><i /> LIVE</span>}
             <span className="total"><Icon name="price" size={15}/>{partyCount > 1 ? `${it.total_cost * partyCount} ريال ${forParty(partyCount)}` : `${it.total_cost} ريال للأنشطة`}</span>
@@ -2541,7 +2543,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                   )}
                   <div className="stop-card has-art">
                     <ActivityArt kind={activityKind(s.act_id)} image={activityImage(s.act_id)} label={s.name} />
-                    <div className="s-time"><Icon name="clock" size={14}/><ItineraryTimeRange start={fmt(s.start)} end={fmt(s.end)} />{cur && <b className="now-tag">الآن</b>}</div>
+                    <div className="s-time"><Icon name="clock" size={14}/><ItineraryTimeRange start={s.start} end={s.end} />{cur && <b className="now-tag">الآن</b>}</div>
                     <div className="s-name">{s.name}</div>
                     <div className="s-meta">
                       <span className="price"><Icon name="price" size={14}/>{price.perPerson}</span>
@@ -2631,7 +2633,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
               <button type="button" className="start-next" onClick={() => selectTab("itinerary")}>
                 <ActivityArt kind={activityKind(headline.act_id)} />
                 <span><small>{closedPreview ? "أول محطة" : current ? "محطتك الآن" : "خطوتك الجاية"}</small><b>{headline.name}</b></span>
-                <span dir="ltr">{fmt(headline.start)}</span>
+                <span>{fmt(headline.start)}</span>
               </button>
             )}
           </div>
@@ -2667,7 +2669,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                     <li key={`${stop.act_id}-${index}`}>
                       <ActivityArt kind={activityKind(stop.act_id)} image={activityImage(stop.act_id)} label={stop.name} />
                       <b>{stop.name}</b>
-                      <small dir="ltr"><Icon name="clock" size={12}/> {fmt(stop.start)}</small>
+                      <small><Icon name="clock" size={12}/> {fmt(stop.start)}</small>
                     </li>
                   ))}
                 </ol>
@@ -2793,7 +2795,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           <ActivityArt className="sheet-art" kind={activityKind(stopMenuStop.act_id)} image={activityImage(stopMenuStop.act_id)} label={stopMenuStop.name} />
           {stopMenuActivity?.description && <p className="sheet-description">{stopMenuActivity.description}</p>}
           <p className="action-sheet-meta sheet-tags">
-            <span><Icon name="clock" size={14}/> <ItineraryTimeRange start={fmt(stopMenuStop.start)} end={fmt(stopMenuStop.end)} /></span>
+            <span><Icon name="clock" size={14}/> <ItineraryTimeRange start={stopMenuStop.start} end={stopMenuStop.end} /></span>
             <span>{stopMenuStop.end - stopMenuStop.start} د</span>
             <span>{stopPriceLabel(stopMenuStop.price, partyCount).perPerson}</span>
             {stopMenuZone && <span>{stopMenuZone}</span>}
@@ -2889,7 +2891,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
             {!replanProposal.candidate.stops.length && <p>ما توفر بديل يناسب وقتك وميزانيتك.</p>}
             {it && <dl className="proposal-totals">
               <div><dt>سعر الأنشطة{partyCount > 1 ? ` ${forParty(partyCount)}` : ""}</dt><dd>قبل {it.total_cost * partyCount} · بعد {replanProposal.candidate.total_cost * partyCount} ريال</dd></div>
-              <div><dt>نهاية الجولة</dt><dd dir="ltr">{it.stops.at(-1) ? fmt(it.stops.at(-1)!.end) : "—"} → {replanProposal.candidate.stops.at(-1) ? fmt(replanProposal.candidate.stops.at(-1)!.end) : "—"}</dd></div>
+              <div><dt>نهاية الجولة</dt><dd>قبل {it.stops.at(-1) ? fmt(it.stops.at(-1)!.end) : "—"} · بعد {replanProposal.candidate.stops.at(-1) ? fmt(replanProposal.candidate.stops.at(-1)!.end) : "—"}</dd></div>
             </dl>}
             {replanProposal.incentive && <p className="proposal-incentive" role="note"><Icon name="gift" size={16}/> <strong>{replanProposal.incentive.valueLabelAr}</strong> · {replanProposal.incentive.titleAr}</p>}
             {replanFeedback && <p role="alert">{replanFeedback}</p>}

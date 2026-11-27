@@ -16,10 +16,11 @@ for (const selected of [false, true]) {
   assert.match(markup, new RegExp(`aria-pressed="${selected}"`));
 }
 
-const timeMarkup = renderToStaticMarkup(createElement(ItineraryTimeRange, { start: "18:00", end: "18:20" }));
-assert.match(timeMarkup, /dir="ltr"/);
+// 12-hour, isolated, and read right to left with the sentence around it: start first, the period said once.
+const timeMarkup = renderToStaticMarkup(createElement(ItineraryTimeRange, { start: 1080, end: 1100 }));
+assert.match(timeMarkup, /dir="rtl"/);
 assert.match(timeMarkup, /unicode-bidi:isolate/);
-assert.ok(timeMarkup.includes(">18:00 – 18:20<"), "itinerary range must preserve chronological start–end order");
+assert.ok(timeMarkup.includes(">6:00 – 6:20 م<"), "itinerary range must preserve chronological start–end order");
 
 const demoSource = await readFile(new URL("../app/demo/page.tsx", import.meta.url), "utf8");
 for (const className of ["container visitor-flow welcome-flow", "container visitor-plan"]) {

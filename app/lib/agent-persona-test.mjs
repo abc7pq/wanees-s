@@ -92,6 +92,9 @@ assert.deepEqual(groundingViolations("أنصحك بـ«عرض الدولفينا
 assert.deepEqual(groundingViolations("سعره ٥٠ ريال", corpus), [], "Arabic-Indic digits are normalised");
 assert.ok(groundingViolations("سعره 45 ريال", corpus).includes("number:45"), "an invented price is caught");
 assert.ok(groundingViolations("يبدأ 19:15", corpus).includes("number:19:15"), "an invented time is caught");
+// Facts carry 12-hour times; a reply that converts one to 24-hour falls back to the engine's wording.
+assert.deepEqual(groundingViolations("يبدأ 6:00 م", "المواعيد 6:00 م"), []);
+assert.ok(groundingViolations("يبدأ 18:00", "المواعيد 6:00 م").includes("number:18:00"), "a time converted to 24-hour is not what the facts say");
 assert.ok(groundingViolations("جرّب «قلعة الأشباح»", corpus).some((item) => item.startsWith("name:")), "an invented activity name is caught");
 assert.ok(groundingViolations("تمام، غيرت مسارك.", "اقتراح يضيف نشاطًا").includes("claimed-action"), "claiming a change the engine did not make is caught");
 assert.ok(groundingViolations("هذا أحلى خيار لك.", corpus, { proposalPending: true }).includes("proposal:not-presented-as-pending"));
@@ -110,7 +113,7 @@ assert.equal(cleanModelText("**هلا**\n- أول\n- ثاني"), "هلا أول 
 // ————— الحقائق المختصرة —————
 const compact = compactSources([{ kind: "activity", name: "x", zoneName: "z", priceSar: 0, durationMin: 20, schedule: { type: "slots", slots: [1080] }, reasons: ["قريبة منك"] }, { zone: "lagoon", zoneName: "البحيرة", level: 0.82, source: "simulated" }]);
 assert.equal(compact[0].السعر, "مجاني");
-assert.equal(compact[0].المواعيد, "18:00");
+assert.equal(compact[0].المواعيد, "6:00 م");
 assert.equal(compact[1].الإشغال, "82%");
 assert.equal(compact[1].المصدر, "تقدير تجريبي");
 assert.equal(compact[0].الوصف, undefined, "no description → no description key");
@@ -223,7 +226,7 @@ globalThis.fetch = async (_url, init) => {
 };
 try {
   const facts = { البيانات: compactSources([{ kind: "activity", name: "عرض الدولفيناريوم", zoneName: "البحيرة المركزية", priceSar: 50, durationMin: 40, schedule: { type: "slots", slots: [1080] }, reasons: ["تناسب مزاجك"] }]) };
-  modelOutput = "بما إن معك العيال وتبون شي هادي، «عرض الدولفيناريوم» في البحيرة المركزية يناسبكم، الساعة 18:00 وسعره 50 ريال.";
+  modelOutput = "بما إن معك العيال وتبون شي هادي، «عرض الدولفيناريوم» في البحيرة المركزية يناسبكم، الساعة 6:00 م وسعره 50 ريال.";
   const grounded = await composeReply({ message: "وش يناسب العيال؟", draft: "أرشّح لك «عرض الدولفيناريوم».", kind: "tool", intent: "search", visitorBrief: brief, facts });
   assert.equal(grounded.composed, true);
   assert.equal(grounded.text, modelOutput);

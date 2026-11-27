@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { Site } from "@/engine/site.ts";
 import { buildRoute } from "@/engine/route.ts";
 import { prisma } from "@/lib/db";
+import { clock12, clockRange12 } from "@/lib/clock-format";
 import { loadSessionCatalog } from "@/lib/db-catalog";
 import { assistantRequestSchema } from "@/lib/api-contracts";
 import {
@@ -122,8 +123,7 @@ function diffPlans(before: ReturnType<typeof toEngineItinerary>, after: ReturnTy
 }
 
 function formatSchedule(schedule: { type: "slots"; slots: number[] } | { type: "continuous"; from: number; to: number }) {
-  const fmt = (minute: number) => `${String(Math.floor(minute / 60)).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-  return schedule.type === "slots" ? schedule.slots.map(fmt).join("، ") : `${fmt(schedule.from)}–${fmt(schedule.to)}`;
+  return schedule.type === "slots" ? schedule.slots.map((slot) => clock12(slot)).join("، ") : clockRange12(schedule.from, schedule.to);
 }
 
 // A kiosk reading a linked phone visit may answer about that plan; anything that would change it stays on the phone.
@@ -296,9 +296,9 @@ export async function POST(request: Request, context: Context) {
         : !next
           ? english ? "Your phone has no plan yet." : "ما فيه مسار في جوالك للحين."
           : decision.intent === "explain" && upcoming.length
-            ? `${english ? "Your plan" : "مسارك"}: ${upcoming.map((stop) => `«${stop.name}» ${clockText(stop.start)}`).join("، ")}.`
+            ? `${english ? "Your plan" : "مسارك"}: ${upcoming.map((stop) => `«${stop.name}» ${clockText(stop.start, english ? "en" : "ar")}`).join("، ")}.`
             : english
-              ? `Your next stop is «${next.name}» at ${clockText(next.start)}.`
+              ? `Your next stop is «${next.name}» at ${clockText(next.start, "en")}.`
               : `محطتك الجاية «${next.name}» الساعة ${clockText(next.start)}.`;
       return jsonData(request, {
         message,
@@ -647,7 +647,7 @@ export async function POST(request: Request, context: Context) {
       nextStartsAt: clockText(start),
       reasons: [`يبدأ ${clockText(start)}`],
     }));
-    const listed = entries.slice(0, 3).map(({ activity, start }) => `${clockText(start)} «${activity.name}» ${english ? "in" : "في"} ${site.zones.get(activity.zone)?.name ?? activity.zone}`);
+    const listed = entries.slice(0, 3).map(({ activity, start }) => `${clockText(start, english ? "en" : "ar")} «${activity.name}» ${english ? "in" : "في"} ${site.zones.get(activity.zone)?.name ?? activity.zone}`);
     answer = entries.length
       ? english
         ? `${soon.length ? "Starting in the next two hours" : "The next timed sessions"}: ${listed.join(", ")}.`
@@ -693,7 +693,7 @@ export async function POST(request: Request, context: Context) {
     const next = describeNextStop(currentPlan, nowMin);
     sources = sourceRowsForPlan(currentPlan, site, session.catalogVersionId);
     answer = next
-      ? `محطتك التالية «${next.name}» الساعة ${String(Math.floor(next.start / 60)).padStart(2, "0")}:${String(next.start % 60).padStart(2, "0")}. عندك ${stationsCount(currentPlan?.stops.length ?? 0)} في المسار.`
+      ? `محطتك التالية «${next.name}» الساعة ${clock12(next.start)}. عندك ${stationsCount(currentPlan?.stops.length ?? 0)} في المسار.`
       : "ما عندك مسار محفوظ حتى الآن. جاوبني عن وقتك واهتماماتك لأبنيه لك.";
     assistantResultType = "TOOL_RESULT";
   } else if (decision.intent === "crowd") {
@@ -765,10 +765,7 @@ export async function POST(request: Request, context: Context) {
     }
   } else if (decision.intent === "faq") {
     // Venue facts come from the published catalog; anything it doesn't hold is said plainly, never guessed.
-    const hhmm = (value: number) => {
-      const minute = value < 100 ? value * 60 : value;
-      return `${String(Math.floor(minute / 60) % 24).padStart(2, "0")}:${String(minute % 60).padStart(2, "0")}`;
-    };
+    const hhmm = (value: number) => clock12(value < 100 ? value * 60 : value, english ? "en" : "ar");
     const opening = catalogResult.catalog.site.opening;
     const lines: string[] = [];
     for (const topic of venueFaqTopics(visitorMessage)) {

@@ -183,7 +183,7 @@ export function LiveBoard({ eventSlug }: { eventSlug: string }) {
 
       <p className={stale ? styles.staleNote : styles.freshness} role="status">
         {stale
-          ? `تعذّر التحديث. نعرض آخر قراءة (${lastOkAt ? new Date(lastOkAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }) : ""}).`
+          ? `تعذّر التحديث. نعرض آخر قراءة (${lastOkAt ? new Date(lastOkAt).toLocaleTimeString("ar-SA-u-nu-latn", { hour: "numeric", minute: "2-digit", hourCycle: "h12" }) : ""}).`
           : `يتحدّث كل ${num(POLL_MS / 1000)} ثانية${board.anyMeasured ? "" : " · قراءات الزحام تقديرية، ليست من حساسات"}.`}
       </p>
       {weather && <p className={styles.freshness}>الطقس في الموقع: {weather.summaryAr}{weather.live ? " (Open-Meteo)" : ""}</p>}

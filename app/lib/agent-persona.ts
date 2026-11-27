@@ -3,6 +3,7 @@
 // كل ما يصل للنموذج هنا يأتي من الكتالوج المنشور وحالة الجلسة؛ لا اسم ولا جوال ولا هوية.
 import type { Site } from "../engine/site.ts";
 import { minutesCount } from "./ar-count.ts";
+import { clock12, clockRange12, type ClockLanguage } from "./clock-format.ts";
 import type { Itinerary, Profile } from "../engine/types.ts";
 import type { VisitProgress } from "./assistant.ts";
 
@@ -98,6 +99,7 @@ const TEXT_RULES = `
 - جملة إلى ثلاث جمل، نص عادي فقط: بدون قوائم أو عناوين أو Markdown أو رموز تعبيرية.
 - أسماء الأنشطة والخدمات (دورة المياه، البوابة، نقطة الإسعاف) فقط بين «» كما وردت؛ أسماء المناطق بدون «» (في منطقة أفريقيا)، ولا تضع الأسعار أو المدد بين «». الأوقات بصيغة 18:30، والأسعار 50 ريال، والمدد بتمييز صحيح: 10 دقائق، 20 دقيقة.
 - الاقتراح يُكتب كاقتراح: «أقترح أضيف…» أو «جهزت لك اقتراح…»، لا «أضفت» ولا «بدّلت» ولا «شلت».
+- الوقت يُكتب بنظام 12 ساعة كما في البيانات تمامًا (7:00 م، 11:30 ص). لا تحوّله إلى 24 ساعة.
 - البطاقات تظهر تحت ردك على الشاشة، فلا تعِد سرد كل الخيارات؛ اذكر الأنسب له وسببه، ولمسة وحدة من وصفه إذا وُجد.`;
 
 const VOICE_RULES = `
@@ -170,9 +172,9 @@ export type VisitorPreferenceSnapshot = {
   walkingTolerance?: string | null;
 } | null | undefined;
 
-export function clockText(minute: number) {
-  const value = ((Math.round(minute) % 1440) + 1440) % 1440;
-  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+/** The time as the visitor reads and hears it: 12-hour, «7:00 م» (see clock-format.ts). */
+export function clockText(minute: number, language: ClockLanguage = "ar") {
+  return clock12(minute, language);
 }
 
 function companionsText(profile: Profile, preferences: VisitorPreferenceSnapshot) {
@@ -264,7 +266,7 @@ type ScheduleLike = { type: "slots"; slots: number[] } | { type: "continuous"; f
 
 function scheduleText(schedule: ScheduleLike | undefined) {
   if (!schedule) return undefined;
-  return schedule.type === "slots" ? schedule.slots.map(clockText).join("، ") : `${clockText(schedule.from)}–${clockText(schedule.to)}`;
+  return schedule.type === "slots" ? schedule.slots.map((slot) => clockText(slot)).join("، ") : clockRange12(schedule.from, schedule.to);
 }
 
 export function compactSources(sources: ReadonlyArray<Record<string, unknown>>) {

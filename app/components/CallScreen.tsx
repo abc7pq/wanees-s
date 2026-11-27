@@ -149,7 +149,7 @@ function StopList({ stops, focus, editing = false, onStop }: { stops: CallStop[]
         <li key={stop.id} className={`${index === focus ? "is-focus " : ""}${stop.change ? `is-${stop.change} ` : ""}is-${stop.state}`} style={{ "--i": index } as React.CSSProperties}>
           <button type="button" onClick={() => onStop?.(stop)} disabled={!onStop} aria-label={onStop ? `دلّني على ${stop.name}` : undefined}>
             <ActivityArt kind={stop.kind} image={stop.image} label={stop.name} />
-            <span className="vc-stop-text"><b>{stop.name}</b><small dir="ltr">{stop.time}</small></span>
+            <span className="vc-stop-text"><b>{stop.name}</b><small>{stop.time}</small></span>
             {stop.change && <em>{stop.change === "added" ? "جديدة" : stop.change === "removed" ? "تُشال" : "تغيّر وقتها"}</em>}
             <span className="vc-stop-end" aria-hidden="true">{editing ? <CallIcon name="grip" size={18} /> : <ActivityArt kind={stop.kind} className="vc-stop-kind" />}</span>
           </button>

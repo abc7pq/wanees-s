@@ -3,6 +3,7 @@
 // clock reads, no visitor data. The page polls the public APIs and passes the results in.
 import type { Catalog } from "@/engine/types.ts";
 import { minutesCount } from "./ar-count.ts";
+import { clock12 } from "./clock-format.ts";
 
 export type CrowdReading = {
   zone: string;
@@ -197,10 +198,7 @@ export function buildBoard(input: BoardInput): Board {
   return { zones, quietest, notices, shows: boardShows, anyMeasured: zones.some((zone) => zone.measured) };
 }
 
-/** Event-local "h:mm" with Arabic-Indic digits. */
+/** Event-local time on the board, 12-hour as on the visitor's phone: «6:55 م». */
 export function boardClock(minute: number): string {
-  const total = ((Math.floor(minute) % 1440) + 1440) % 1440;
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  return `${h.toLocaleString("en-US")}:${m.toLocaleString("en-US", { minimumIntegerDigits: 2 })}`;
+  return clock12(Math.floor(minute));
 }
