@@ -1,0 +1,19 @@
+// نسخة تجربة من ونيس على GitHub Codespaces: تُفتح من المتصفح (حتى من الجوال) بلا سيرفر ولا تثبيت.
+// الخطوات في .devcontainer/README.md
+{
+  "name": "ونيس s",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "26" }
+  },
+  "forwardPorts": [3100, 3200],
+  "portsAttributes": {
+    "3100": { "label": "ونيس (الزائر)", "onAutoForward": "notify" },
+    "3200": { "label": "لوحة المنظّم", "onAutoForward": "silent" },
+    "5432": { "label": "PostgreSQL", "onAutoForward": "ignore" }
+  },
+  "postCreateCommand": "bash .devcontainer/create.sh",
+  "postAttachCommand": "bash .devcontainer/start.sh"
+}

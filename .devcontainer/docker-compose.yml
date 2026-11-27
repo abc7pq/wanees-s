@@ -1,0 +1,21 @@
+# The Codespace: a workspace container that shares its network with a throwaway PostgreSQL,
+# so the app reaches the database at localhost:5432 exactly as in local development.
+services:
+  app:
+    image: mcr.microsoft.com/devcontainers/base:bookworm
+    volumes:
+      - ../..:/workspaces:cached
+    command: sleep infinity
+    network_mode: service:db
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: wanees
+      POSTGRES_PASSWORD: wanees_dev
+      POSTGRES_DB: wanees
+    volumes:
+      - wanees_codespace_data:/var/lib/postgresql/data
+
+volumes:
+  wanees_codespace_data:
