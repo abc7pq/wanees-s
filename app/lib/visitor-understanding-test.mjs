@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  describesVisit,
   applyUnderstanding, assumptionLine, decodeLikes, detectReplyLanguage, followUpQuestion, mergeModelUnderstanding, planAssumptions, understandMessage,
 } from "./visitor-understanding.ts";
 
@@ -103,4 +104,10 @@ assert.equal(applyUnderstanding(null, understandMessage("نبي شي رخيص"))
 assert.equal(assumptionLine(planAssumptions(null)), "افترضت: 3 ساعات · بدون رعب · ميزانية متوسطة · بدون أطفال صغار");
 assert.equal(assumptionLine(planAssumptions(prefs)), "افترضت: 3 ساعات · ميزانية متوسطة");
 assert.deepEqual(planAssumptions(null).map((item) => item.message), ["عندي ساعة بس", "نحب الرعب", "أبي شي رخيص", "معي عيالي"]);
+// A sentence that describes the whole visit builds the plan; a question about one thing stays a question.
+assert.equal(describesVisit(understandMessage("معي عائلتي ونبي ألعاب ومسرحية وعشاء لمدة ثلاث ساعات")), true);
+assert.equal(describesVisit(understandMessage("حنا شباب وعندنا ساعتين")), true);
+assert.equal(describesVisit(understandMessage("معي عائلتي، وين المطاعم؟")), false);
+assert.equal(describesVisit(understandMessage("أبي مطعم")), false);
+assert.equal(describesVisit(understandMessage("وين دورات المياه؟")), false);
 console.log("visitor understanding: 30-sentence corpus and all assertions passed");

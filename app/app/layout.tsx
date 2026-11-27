@@ -3,6 +3,7 @@ import { cookies, headers } from "next/headers";
 import { IBM_Plex_Sans_Arabic, Inter } from "next/font/google";
 import "./globals.css";
 import "./redesign.css";
+import "./call.css";
 import { OfflineSupport } from "@/components/OfflineSupport";
 import { THEME_COOKIE, parseTheme } from "@/lib/visitor-theme";
 

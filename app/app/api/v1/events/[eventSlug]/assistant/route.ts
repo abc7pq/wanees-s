@@ -47,7 +47,7 @@ import { jsonData } from "@/lib/api-response";
 import { activeLiveEvents } from "@/lib/active-live-events";
 import { isMeasuredCrowd, loadCurrentCrowdSnapshots } from "@/lib/live-updates";
 import { describeWalkingBrief, fuzzyActivityTarget, likelyOrigin, walkingBrief, type WalkingBrief } from "@/lib/walking-brief";
-import { applyUnderstanding, followUpQuestion, planAssumptions, understandMessage, type ReplyLanguage } from "@/lib/visitor-understanding";
+import { applyUnderstanding, describesVisit, followUpQuestion, planAssumptions, understandMessage, type ReplyLanguage } from "@/lib/visitor-understanding";
 import { conversationPlanIntent, instantPlanDraft, notedFacts, visitStarted } from "@/lib/conversation-plan";
 import { categoryLabel, detectCategory, isRestRequest, nearestCalm, nearestInCategory, splitOriginTarget, zoneFromText, type PlaceCategory } from "@/lib/place-categories";
 import { extractVisitorUnderstanding, useLlmBreakerFor } from "@/lib/llm";
@@ -265,7 +265,10 @@ export async function POST(request: Request, context: Context) {
   // An explicit change («تعبت، قلّل الجولة») stays a change: rest only answers «where can I sit».
   const resting = isTypedMessage && !typedProposalDecision && !isLostChild(visitorMessage) && isRestRequest(visitorMessage)
     && !["shorten", "remove", "swap", "add", "build", "help"].includes(decision.intent);
-  const category: PlaceCategory | null = resting ? "seating" : isTypedMessage && !typedProposalDecision && !isLostChild(visitorMessage)
+  // Before the first plan, a sentence that describes the visit (who, and how long or what they want) is a
+  // request to plan it: «عشاء» in it is one of the wishes, not a search for restaurants.
+  const visitBrief = isTypedMessage && !latest && describesVisit(understood);
+  const category: PlaceCategory | null = resting ? "seating" : isTypedMessage && !typedProposalDecision && !isLostChild(visitorMessage) && !visitBrief
     && !["faq", "help", "schedule", "alternatives", "add", "remove", "swap", "shorten", "explain"].includes(decision.intent)
     && !(decision.intent === "location" && decision.locationId && !detectCategory(originSplit?.targetText ?? visitorMessage))
     && !namedActivity(visitorMessage, site)

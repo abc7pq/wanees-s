@@ -56,6 +56,7 @@ assert.doesNotMatch(personaInstructions("call"), /ثلاثة أسئلة قبل �
 assert.match(personaInstructions("call"), /لا تسأل سؤالًا ثانيًا قبل أول مسار إلا إذا جوابه يمس السلامة أو حد العمر/, "one opening question at most");
 assert.match(personaInstructions("call"), /والشاشة تعرض الخريطة والمحطات مع كلامك/, "the call explains while the screen shows");
 for (const channel of ["text", "voice", "call"]) assert.match(personaInstructions(channel), /صوتك وشخصيتك أنثوية سعودية/, `${channel}: the female Saudi persona`);
+assert.match(personaInstructions("call"), /استدعِ confirm_plan، وبعد ما ترجع saved:true/, "the plan is confirmed aloud only after the system verified it");
 for (const rule of ["# الأداء الصوتي", "لا تكرري نفس عبارة الانتظار", "بنبرة هادئة ومطمئنة وواضحة"]) assert.ok(personaInstructions("call").includes(rule), `call voice rule: ${rule}`);
 
 // ————— مطابقة الأسماء: كلمة عامة لا تختار نشاطًا —————
@@ -132,7 +133,7 @@ assert.deepEqual(rich[0].وسوم, ["حيوانات"]);
 }
 
 // ————— المكالمة الحية —————
-assert.deepEqual(REALTIME_TOOLS.map((tool) => tool.name), ["ask_wanees_engine", "respond_to_proposal", "note_stop_feedback", "end_call"]);
+assert.deepEqual(REALTIME_TOOLS.map((tool) => tool.name), ["ask_wanees_engine", "respond_to_proposal", "confirm_plan", "note_stop_feedback", "end_call"]);
 const greeting = callGreeting({ hasPlan: true, nextName: "عرض الدولفيناريوم", withKids: true });
 assert.match(greeting, /«عرض الدولفيناريوم»/);
 assert.match(callGreeting({ hasPlan: false, withKids: true }), /العيال/);
@@ -191,7 +192,7 @@ assert.doesNotMatch(buildCallInstructions({ visitorBrief: brief, suggestions: []
   assert.deepEqual(config.reasoning, { effort: "low" });
   assert.equal(config.audio.input.turn_detection.type, "semantic_vad");
   assert.equal(config.audio.input.transcription.language, undefined, "caption language is auto-detected unless configured");
-  assert.deepEqual(config.tools.map((tool) => tool.name), ["ask_wanees_engine", "respond_to_proposal", "note_stop_feedback", "end_call"]);
+  assert.deepEqual(config.tools.map((tool) => tool.name), ["ask_wanees_engine", "respond_to_proposal", "confirm_plan", "note_stop_feedback", "end_call"]);
   process.env.WANEES_OPENAI_REALTIME_REASONING = "turbo";
   assert.equal(realtimeReasoningEffort(), "low", "an unknown effort falls back to low");
   process.env.WANEES_OPENAI_REALTIME_REASONING = "minimal";

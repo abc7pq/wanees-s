@@ -32,6 +32,12 @@ export const REALTIME_TOOLS = [
   },
   {
     type: "function",
+    name: "confirm_plan",
+    description: "يعتمد الخطة المعروضة على الشاشة بعد موافقة الزائر الصريحة («تمام»، «اعتمدها»، «زين»). يتحقق النظام إنها محفوظة في جدوله ويعرض له التأكيد. إذا رجعت saved:true قل له إنك أضفتها لجدوله؛ وإذا رجعت saved:false فلا تقل إنها أُضيفت.",
+    parameters: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    type: "function",
     name: "note_stop_feedback",
     description: "يسجّل رأي الزائر في محطة خلّصها (مثل جوابه على «وش رايك في الزرافات؟»). استدعها مرة واحدة لكل محطة بعد ما يقول رأيه، بتقدير من 1 إلى 5 مأخوذ من كلامه. لا تستدعها لمحطة ما جرّبها.",
     parameters: {

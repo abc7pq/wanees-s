@@ -244,6 +244,17 @@ function detectMobility(text: string): Understanding["mobility"] {
 
 const PLAN_REQUEST = / (ابي مسار|ابغي مسار|نبي مسار|سو لي مسار|سوي لي مسار|ابني لي|رتب لي|رتبي لي|خطط لي|خطه|جوله|جولتي|مساري|مسار|وش اسوي|وش نسوي|ايش اسوي|ايش نسوي|وين اروح|وين نروح|من وين ابدا|من وين نبدا|اقترح|اقترح لي|وش تنصح|plan|itinerary|what should i do|what should we do|where should we go|where do we start|suggest|recommend|tour) /;
 
+/**
+ * «معي عائلتي ونبي ألعاب ومسرحية وعشاء لثلاث ساعات» describes a whole visit, not a search for
+ * restaurants: it says who is coming and either for how long or two or more things they want.
+ * Before the first plan exists, such a sentence builds the plan instead of answering one word in it.
+ */
+export function describesVisit(understood: Pick<Understanding, "party" | "partySize" | "likes" | "unmatched" | "availableMinutes" | "untilClosing">) {
+  const who = Boolean(understood.party || understood.partySize);
+  const wants = new Set([...understood.likes.map((like) => like.tag), ...understood.unmatched]).size;
+  return who && (understood.availableMinutes != null || understood.untilClosing || wants >= 2);
+}
+
 export function understandMessage(message: string, previousLanguage: ReplyLanguage | null = null): Understanding {
   const text = norm(message);
   const party = detectParty(text);
