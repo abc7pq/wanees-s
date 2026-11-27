@@ -37,6 +37,7 @@
     "**/*.tsx",
     ".next-agent/types/**/*.ts",
     ".next-map/types/**/*.ts",
+    ".next-preview-anon/types/**/*.ts",
     ".next-preview/types/**/*.ts",
     ".next-push/types/**/*.ts",
     ".next-sw/types/**/*.ts",
@@ -44,8 +45,7 @@
     ".next-theater/types/**/*.ts",
     ".next-uicheck/types/**/*.ts",
     ".next/types/**/*.ts",
-    "next-env.d.ts",
-    ".next-preview-anon/types/**/*.ts"
+    "next-env.d.ts"
   ],
   "exclude": [
     "node_modules"

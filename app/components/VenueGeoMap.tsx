@@ -80,6 +80,20 @@ function CalibratedVenueMap(props: VenueGeoMapProps) {
 
 /* ---------------- أدوات ---------------- */
 
+/**
+ * A route stop's chip carries its zone name in white. Some zone colours (orange, yellow, teal) are too light
+ * for white text, so the chip uses the same hue darkened just enough for 4.5:1 (WCAG 1.4.3).
+ */
+export function readableChipColor(hex: string): string {
+  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!match) return hex;
+  let [r, g, b] = [0, 2, 4].map((at) => parseInt(match[1].slice(at, at + 2), 16));
+  const luminance = () => [r, g, b].map((value) => { const c = value / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; })
+    .reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  for (let step = 0; step < 40 && 1.05 / (luminance() + 0.05) < 4.6; step += 1) [r, g, b] = [r, g, b].map((value) => Math.round(value * 0.95));
+  return `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+}
+
 export function crowdTone(level: number | undefined, threshold = 0.75): "calm" | "busy" | "packed" | "unknown" {
   if (level == null || !Number.isFinite(level)) return "unknown";
   if (level >= threshold) return "packed";
@@ -415,7 +429,7 @@ function ParkMap({ data, geo, stops, eventSlug, focusId, path, me, crowd, crowdT
       const badge = crowdLayer && tone === "packed" ? `<span class="pm-badge">زحمة</span>` : "";
       const icon = L.divIcon({
         className: "pm-label-wrap",
-        html: `<span class="pm-label${key ? " pm-key" : ""}${tone === "packed" && crowdLayer ? " pm-packed" : ""}" style="--zc:${theme.color}"><span class="pm-ico" aria-hidden="true">${theme.icon}</span><span class="pm-name">${escapeHtml(theme.short)}</span>${badge}</span>`,
+        html: `<span class="pm-label${key ? " pm-key" : ""}${tone === "packed" && crowdLayer ? " pm-packed" : ""}" style="--zc:${theme.color};--zk:${readableChipColor(theme.color)}"><span class="pm-ico" aria-hidden="true">${theme.icon}</span><span class="pm-name">${escapeHtml(theme.short)}</span>${badge}</span>`,
         iconSize: [0, 0],
       });
       const marker = L.marker(geo.toLatLng(zone.x, zone.y), { icon, keyboard: true, title: zone.name, riseOnHover: true, zIndexOffset: key ? 300 : 0 });

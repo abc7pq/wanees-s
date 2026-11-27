@@ -119,6 +119,29 @@ export function venueFaqTopics(text: string): VenueFaqTopic[] {
 const WISH_WORDS = ["ابي", "ابغي", "ابغا", "نبي", "نبغي", "ودي", "ودنا", "حاب", "حابين", "حابه"];
 
 /** The one activity whose full name (or English name) the visitor typed; null when none or several match. */
+/**
+ * «قارن بين التلفريك وستار فلاير» / «التلفريك ولا ستار فلاير؟»: the two catalog activities the visitor named,
+ * in the order they said them. Null unless there is a comparison word and exactly two named activities,
+ * so a general question never turns into a comparison.
+ */
+export function comparisonPair(text: string, site: Site): [string, string] | null {
+  const value = ` ${normalize(text).replace(/[أإآ]/g, "ا")} `;
+  if (!/ (?:قارن|قارني|قارنلي|مقارنه|مقارنة|الفرق|ايهم|ايهما|احسن|افضل|ولا|او|compare|versus|vs|better) /.test(value)) return null;
+  const hits: Array<{ id: string; phrase: string; at: number }> = [];
+  for (const activity of site.activities.values()) {
+    const phrases = [activity.name, activity.name.split("—")[0], activity.name_en ?? ""]
+      .map((name) => normalize(name).replace(/[أإآ]/g, "ا")).filter((name) => name.length >= 3);
+    const found = phrases.map((phrase) => ({ phrase, at: value.indexOf(phrase) })).filter((hit) => hit.at >= 0).sort((x, y) => y.phrase.length - x.phrase.length)[0];
+    if (found) hits.push({ id: activity.id, ...found });
+  }
+  // «باتل كارت العائلي» also contains «باتل كارت»: keep the longer name when one match sits inside another.
+  const distinct = hits.filter((hit) => !hits.some((other) => other !== hit && other.phrase.length > hit.phrase.length
+    && hit.at >= other.at && hit.at + hit.phrase.length <= other.at + other.phrase.length));
+  if (distinct.length !== 2) return null;
+  const [first, second] = distinct.sort((x, y) => x.at - y.at);
+  return [first.id, second.id];
+}
+
 export function namedActivity(text: string, site: Site): string | null {
   const value = normalize(text);
   const words = new Set(value.split(" ").filter((word) => word.length >= 3));

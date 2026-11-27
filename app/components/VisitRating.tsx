@@ -53,6 +53,7 @@ export function VisitRating({ visitKey, onRate }: { visitKey: string; onRate: (v
   }
   return (
     <div className={styles.card} role="group" aria-labelledby="visit-rating-title">
+      <Mascot mood="cheer" height={84} className={styles.mascot} />
       <strong id="visit-rating-title" className={styles.title}>كيف كانت ليلتك مع ونيس؟</strong>
       <div className={styles.choices}>
         {CHOICES.map((choice) => (

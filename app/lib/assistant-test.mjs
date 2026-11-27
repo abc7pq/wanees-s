@@ -491,5 +491,18 @@ assert.ok(!isRecommendationQuery("كم سعر باتل كارت؟"), "a price qu
   const shorten = await decide("قصّر الجولة", site, plan, profile, profile.start_min);
   assert.equal(shorten.intent, "shorten");
   assert.equal(shorten.needsClarification, false, "shorten is never a clarification");
-  console.log("shorten never asks which stop ✓");
+  // «قارن بين X و Y»: two named catalog activities with a comparison word, in the order said; nothing else.
+{
+  const { comparisonPair } = await import("./assistant.ts");
+  const compareSite = new Site(catalogData);
+  const idOf = (name) => [...compareSite.activities.values()].find((activity) => activity.name === name)?.id;
+  assert.deepEqual(comparisonPair("قارن لي بين عرض الدولفيناريوم وإطعام الزرافات", compareSite), [idOf("عرض الدولفيناريوم"), idOf("إطعام الزرافات")]);
+  assert.deepEqual(comparisonPair("إطعام الزرافات ولا عرض الدولفيناريوم؟", compareSite), [idOf("إطعام الزرافات"), idOf("عرض الدولفيناريوم")], "the order the visitor said");
+  assert.deepEqual(comparisonPair("أيهم أفضل تجربة الأسود أو سينما الكوكب 360", compareSite), [idOf("تجربة الأسود — الممر الزجاجي"), idOf("سينما الكوكب 360")], "the short name before «—» is enough");
+  assert.equal(comparisonPair("قارن لي بين عرض الدولفيناريوم", compareSite), null, "one activity is not a comparison");
+  assert.equal(comparisonPair("أبي عرض الدولفيناريوم بعدين إطعام الزرافات", compareSite), null, "two names without a comparison word");
+  assert.equal(comparisonPair("وش أفضل شي للأطفال؟", compareSite), null, "a general question stays general");
+}
+
+console.log("shorten never asks which stop ✓");
 }

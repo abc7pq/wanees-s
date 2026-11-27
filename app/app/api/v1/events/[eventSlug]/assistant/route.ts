@@ -26,6 +26,7 @@ import {
   redactConversationText,
   sourceForActivity,
   toEngineItinerary,
+  comparisonPair,
   type StoredItinerary,
 } from "@/lib/assistant";
 import { composeReply } from "@/lib/llm";
@@ -359,6 +360,9 @@ export async function POST(request: Request, context: Context) {
     contextChanged = true;
   }
 
+  // «قارن بين X و Y»: two named activities side by side, from the catalog only. It is a search (nothing changes).
+  const comparePair = ["search", "unknown", "chat", "explain"].includes(decision.intent) && !typedProposalDecision ? comparisonPair(visitorMessage, site) : null;
+  if (comparePair) decision = { ...decision, intent: "search", tool: "search_event_content", needsClarification: false };
   let answer = "أقدر أبحث لك عن نشاط، أو أشرح مسارك، أو أعدّله حسب وقتك ومزاجك.";
   let sources: Array<Record<string, unknown>> = [];
   let warnings: Array<Record<string, unknown>> = [];
@@ -496,6 +500,35 @@ export async function POST(request: Request, context: Context) {
         + (unchanged ? " مسارك الحالي يناسبكم كما هو." : !latest ? " وبنيت لك مسارًا يناسبكم." : applyDirectly ? " وحدّثت جولتك على هذا." : " جهزت لك اقتراح مسار يناسبكم، والقرار لك.")
         + wantedNote
         + ((q) => (q ? ` ${q}` : ""))(followUpQuestion(preferencesNow, language));
+    assistantResultType = "TOOL_RESULT";
+  } else if (comparePair) {
+    const pair = comparePair.map((id) => site.activities.get(id)!);
+    const youngest = planningProfile.youngest_child_age ?? null;
+    sources = pair.map((activity) => ({
+      ...sourceForActivity(activity, session.catalogVersionId),
+      zoneName: site.zones.get(activity.zone)?.name ?? activity.zone,
+      reasons: [youngest != null && activity.min_age != null && activity.min_age > youngest ? `من عمر ${activity.min_age}` : activity.family ? "تناسب العائلة" : "من اللي سألت عنهم"],
+    }));
+    const line = (activity: (typeof pair)[number]) => {
+      const priced = activity.price_known !== false;
+      const parts = english
+        ? [priced ? (activity.price === 0 ? "free" : `about ${activity.price} riyals per person`) : "price not listed", `${activity.duration_min} minutes`, ...(activity.min_age ? [`ages ${activity.min_age}+`] : [])]
+        : [priced ? (activity.price === 0 ? "مجانية" : `حوالي ${activity.price} ريال للشخص`) : "السعر غير مذكور في الكتالوج", minutesText(activity.duration_min), ...(activity.min_age ? [`من عمر ${activity.min_age}`] : [])];
+      const zone = site.zones.get(activity.zone)?.name ?? activity.zone;
+      return english ? `«${activity.name_en ?? activity.name}» in ${zone}: ${parts.join(", ")}.` : `«${activity.name}» في ${zone}: ${parts.join("، ")}.`;
+    };
+    const [first, second] = pair;
+    const bothPriced = first.price_known !== false && second.price_known !== false;
+    const cheaper = bothPriced && first.price !== second.price ? (first.price < second.price ? first : second) : null;
+    const shorter = first.duration_min !== second.duration_min ? (first.duration_min < second.duration_min ? first : second) : null;
+    const tooYoung = youngest != null ? pair.filter((activity) => activity.min_age != null && activity.min_age > youngest) : [];
+    const verdict = english
+      ? [cheaper ? `«${cheaper.name_en ?? cheaper.name}» is cheaper` : null, shorter ? `«${shorter.name_en ?? shorter.name}» is shorter` : null].filter(Boolean).join(", ")
+      : [cheaper ? `الأرخص «${cheaper.name}»` : null, shorter ? `والأقصر «${shorter.name}»` : null].filter(Boolean).join(" ").replace(/^و/, "");
+    const ageNote = tooYoung.length === 1
+      ? (english ? ` «${tooYoung[0].name_en ?? tooYoung[0].name}» is above your youngest child's age.` : ` «${tooYoung[0].name}» فوق عمر أصغر طفل معكم.`)
+      : "";
+    answer = `${line(first)} ${line(second)}${verdict ? ` ${verdict}.` : ""}${ageNote}`;
     assistantResultType = "TOOL_RESULT";
   } else if (decision.intent === "search") {
     const ranked = searchActivities(visitorMessage, site, profile, session.catalogVersionId, guestSignal);

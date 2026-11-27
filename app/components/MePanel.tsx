@@ -65,6 +65,11 @@ export function MePanel({ preferences, loading, onLanguage, onForget, languageBu
   const language = preferences?.replyLanguage ?? "ar";
   return (
     <div className="me-panel">
+      <header className="me-hello">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/brand/mascot-head.webp" alt="" width={56} height={56} />
+        <div><strong>مرحبًا بك في ونيس</strong><small>{remember?.on && remember.visitCount > 1 ? `زيارتك رقم ${remember.visitCount}` : "زائر · بدون اسم أو جوال"}</small></div>
+      </header>
       <section aria-labelledby="me-understood">
         <h2 id="me-understood">اللي فهمته عنك</h2>
         {loading && <div className="skeleton-list" aria-label="جارٍ التحميل">{[0, 1].map((key) => <span key={key} className="skeleton-row" />)}</div>}

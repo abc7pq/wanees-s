@@ -217,6 +217,10 @@ export type RealtimeCallHandle = {
   setSpeakerMuted: (muted: boolean) => void;
   /** مقياس الصوت الفعلي: ميكروفون الزائر وصوت ونيس، لموجات شاشة المكالمة. لا تسجيل. */
   meters: () => { mic: AudioMeter | null; voice: AudioMeter | null };
+  /** مخارج الصوت المتاحة (سماعة الجوال، سماعة بلوتوث…) حيث يدعم المتصفح اختيارها؛ قائمة فارغة إذا لا. */
+  outputs: () => Promise<Array<{ id: string; label: string }>>;
+  /** يحوّل صوت ونيس إلى المخرج المختار. false إذا المتصفح لا يدعم أو رفض. */
+  setOutput: (deviceId: string) => Promise<boolean>;
   /** قياسات المكالمة للتقييم (docs/VOICE_EVALUATION.md): زمن البدء، وزمن أول صوت بعد كل دور للزائر. أرقام فقط. */
   timings: () => CallTimings;
 };
@@ -354,5 +358,18 @@ export async function startRealtimeCall(options: StartOptions): Promise<Realtime
     setSpeakerMuted: (muted) => { audio.muted = muted; },
     meters: () => ({ mic: micMeter, voice: voiceMeter }),
     timings: () => timer.timings(),
+    outputs: async () => {
+      const sink = audio as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+      if (typeof sink.setSinkId !== "function" || !navigator.mediaDevices?.enumerateDevices) return [];
+      try {
+        const devices = (await navigator.mediaDevices.enumerateDevices()).filter((device) => device.kind === "audiooutput" && device.label);
+        return devices.map((device) => ({ id: device.deviceId, label: device.label }));
+      } catch { return []; }
+    },
+    setOutput: async (deviceId) => {
+      const sink = audio as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+      if (typeof sink.setSinkId !== "function") return false;
+      try { await sink.setSinkId(deviceId); return true; } catch { return false; }
+    },
   };
 }

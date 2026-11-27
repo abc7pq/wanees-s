@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Mascot, type MascotMood } from "@/components/Brand";
 import { ActivityArt } from "@/components/ActivityArt";
 import { UiIcon } from "@/components/UiIcon";
@@ -118,7 +118,11 @@ function StopRail({ stops }: { stops: CallPlanStop[] }) {
   );
 }
 
-export function CallScreen({ state, mode, working, muted, speakerMuted, heard, error, stage, savedPulse, eventName, map, meters, onStart, onEnd, onMute, onSpeaker, onChat, onGuide, onCard, onSimulate, onProposal }: {
+export function CallScreen({ state, mode, working, muted, speakerMuted, heard, error, stage, savedPulse, eventName, map, meters, outputs = [], outputId = "", onOutput, onStart, onEnd, onMute, onSpeaker, onChat, onGuide, onCard, onSimulate, onProposal }: {
+  /** Audio outputs the browser lets the page choose between (empty where it does not). */
+  outputs?: Array<{ id: string; label: string }>;
+  outputId?: string;
+  onOutput?: (deviceId: string) => void;
   state: VoiceCallState;
   mode: "realtime" | "browser" | null;
   /** The engine is working on a request right now (planning / carrying it out). */
@@ -145,6 +149,8 @@ export function CallScreen({ state, mode, working, muted, speakerMuted, heard, e
   onProposal: (decision: "accept" | "keep_current") => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
+  const [outputMenu, setOutputMenu] = useState(false);
+  const canPickOutput = outputs.length > 1 && Boolean(onOutput);
   const active = state === "listening" || state === "thinking" || state === "speaking";
   const saved = stage.kind === "plan" && stage.saved;
   const step: Step | null = !active ? null : working ? "plan" : state === "listening" ? "listen" : state === "thinking" ? "understand" : saved ? "done" : null;
@@ -254,7 +260,19 @@ export function CallScreen({ state, mode, working, muted, speakerMuted, heard, e
         )}
         {active ? (
           <div className="call-controls">
-            <button type="button" className="call-btn" aria-pressed={speakerMuted} onClick={onSpeaker} aria-label={speakerMuted ? "شغّل صوت ونيس" : "اكتم صوت ونيس"}><UiIcon name={speakerMuted ? "speakerOff" : "speaker"} /></button>
+            <span className="call-output">
+              <button type="button" className="call-btn" aria-pressed={speakerMuted} aria-haspopup={canPickOutput ? "menu" : undefined} aria-expanded={canPickOutput ? outputMenu : undefined}
+                onClick={() => { if (canPickOutput) setOutputMenu((open) => !open); else onSpeaker(); }}
+                aria-label={canPickOutput ? "مخرج الصوت" : speakerMuted ? "شغّل صوت ونيس" : "اكتم صوت ونيس"}><UiIcon name={speakerMuted ? "speakerOff" : "speaker"} /></button>
+              {canPickOutput && outputMenu && (
+                <div className="call-output-menu" role="menu" aria-label="مخرج الصوت">
+                  {outputs.map((device) => (
+                    <button key={device.id} type="button" role="menuitemradio" aria-checked={device.id === outputId} onClick={() => { onOutput?.(device.id); setOutputMenu(false); }}><bdi>{device.label}</bdi></button>
+                  ))}
+                  <button type="button" role="menuitemcheckbox" aria-checked={speakerMuted} onClick={() => { onSpeaker(); setOutputMenu(false); }}>{speakerMuted ? "شغّل صوت ونيس" : "اكتم صوت ونيس"}</button>
+                </div>
+              )}
+            </span>
             <button type="button" className="call-btn" aria-pressed={muted} disabled={!onMute} onClick={() => onMute?.()} aria-label={muted ? "إلغاء كتم الميكروفون" : "كتم الميكروفون"}
               title={onMute ? undefined : "الكتم متاح في المكالمة الحية"}><CallIcon name={muted ? "micOff" : "mic"} /></button>
             <button type="button" className="call-btn end" onClick={onEnd} aria-label="إنهاء المكالمة"><CallIcon name="end" size={26} /></button>

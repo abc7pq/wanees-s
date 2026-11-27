@@ -191,7 +191,7 @@ export default function Home() {
             <h1 id="home-title"><span>ونيس،</span> المرشد الذكي لزوار الفعاليات</h1>
             <p>في الفعاليات الكبيرة، يساعدك ونيس تختار وش تسوي ووين تروح، ويرتّب لك جولة تناسب وقتك وميزانيتك واهتماماتك.</p>
             <div className={styles.heroActions}>
-              <Link className={styles.primary} href="/e/boulevard-world-demo">جرّب ونيس <Arrow /></Link>
+              <Link className={styles.primary} href="/e/boulevard-world-demo">ابدأ مع ونيس <Arrow /></Link>
               <a className={styles.secondary} href="#how">كيف يعمل <Arrow direction="↓" /></a>
             </div>
           </div>

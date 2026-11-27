@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { UiIcon, type UiIconName } from "./UiIcon";
+import { ActivityArt } from "./ActivityArt";
 
 // «حولي» (audit 2.2, 3.2): one tap to the nearest toilets, food, prayer room, first aid, info desk or
 // seating, by real walking minutes from where the visitor is. Each result has «دلّني».
@@ -66,7 +67,8 @@ export function NearbyPanel({ eventSlug, request, locate, stopZone, onGuide, onS
 
   return (
     <div className="nearby-panel">
-      <h2 id="nearby-title">وش تبي قريب منك؟</h2>
+      <h2 id="nearby-title">حولي</h2>
+      <p className="nearby-sub">وش تبي قريب منك الآن؟</p>
       <div className="nearby-grid" role="group" aria-labelledby="nearby-title">
         {CATEGORIES.map((category) => (
           <button key={category.id} type="button" className="nearby-tile" aria-pressed={active === category.id} disabled={busy} onClick={() => void look(category.id)}>
@@ -88,6 +90,7 @@ export function NearbyPanel({ eventSlug, request, locate, stopZone, onGuide, onS
           <ol className="nearby-results">
             {answer.results.map((place) => (
               <li key={place.id}>
+                <ActivityArt kind={place.kind === "activity" ? (active === "food" ? "food" : "experience") : "place"} />
                 <div>
                   <strong>{place.name}</strong>
                   <small>{place.zoneName} · {place.walkMin ? `${place.walkMin} د مشي` : "في نفس المنطقة"}</small>

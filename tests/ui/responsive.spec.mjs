@@ -77,7 +77,7 @@ test("public pages and organizer sign-in fit the device matrix", async ({ page }
   for (const size of widths) {
     await page.setViewportSize(size);
     await page.goto(visitor);
-    await expect(page.getByRole("link", { name: "جرّب ونيس" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "ابدأ مع ونيس" })).toBeVisible();
     await expectResponsive(page);
     await page.goto(`${visitor}/demo`);
     const start = (await openingBox(page));

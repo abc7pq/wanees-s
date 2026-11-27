@@ -8,7 +8,7 @@
 /* ---------- calmer brand surfaces ---------- */
 .visitor-flow, .visitor-plan {
   --grad: linear-gradient(135deg, #8a34f2 0%, #6220cf 100%);
-  --call-teal: #0a9d8a;
+  --call-teal: #00796b; /* white text on it is 5.3:1 */
   --call-night: #1d0b46;
 }
 .visitor-flow .cta, .visitor-plan .cta { box-shadow: 0 6px 16px rgba(74, 5, 166, 0.16); }
@@ -141,7 +141,7 @@
   flex: none; width: 44px; height: 44px; min-width: 44px; border-radius: 50%; border: 0; display: grid; place-items: center;
   background: var(--surface-2); color: var(--purple); box-shadow: none; cursor: pointer;
 }
-.visitor-plan .composer .composer-tool[aria-pressed="true"] { background: var(--purple); color: #fff; }
+.visitor-plan .composer .composer-tool[aria-pressed="true"] { background: #7a35e6; color: #fff; }
 .chat-screen .composer input { flex: 1; min-width: 0; }
 
 /* ---------- navigation bar (same on every main screen) ---------- */
@@ -150,7 +150,6 @@
 .bottom-nav-item[aria-current="page"] { background: transparent; color: var(--purple); font-weight: 700; }
 .bottom-nav-item[aria-current="page"] .bottom-nav-icon { background: var(--surface-2); }
 .bottom-nav-icon { padding: 3px 14px; border-radius: 999px; transition: background var(--tr); }
-.welcome-flow .bottom-nav-item:not([aria-current="page"]) { opacity: 0.72; }
 
 /* ---------- the call ---------- */
 dialog.visitor-dialog.bottom-sheet.call-dialog {
@@ -244,7 +243,7 @@ dialog.visitor-dialog.bottom-sheet.call-dialog {
 .call-proposal ul { margin: 0 0 10px; padding-inline-start: 18px; font-size: 14px; line-height: 1.8; }
 .call-proposal-acts { display: flex; gap: 8px; }
 .call-proposal-acts button { flex: 1; min-height: 46px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.3); background: transparent; color: #fff; font-weight: 700; }
-.call-proposal-acts button.yes { border: 0; background: #17b89f; }
+.call-proposal-acts button.yes { border: 0; background: #00796b; }
 .call-proposal-acts button:disabled { opacity: 0.6; }
 
 .call-foot { display: grid; gap: 10px; justify-items: center; padding: 10px 16px 0; }
@@ -265,7 +264,7 @@ dialog.visitor-dialog.bottom-sheet.call-dialog {
 .call-btn.end { width: 66px; height: 66px; background: #e5484d; }
 .call-btn.guide { background: #7a35e6; }
 .call-controls.idle { flex-wrap: wrap; gap: 6px 18px; }
-.call-start { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1 0 100%; min-height: 54px; padding: 10px 26px; border: 0; border-radius: 999px; background: #17b89f; color: #fff; font-size: 16px; font-weight: 700; }
+.call-start { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 1 0 100%; min-height: 54px; padding: 10px 26px; border: 0; border-radius: 999px; background: #00796b; color: #fff; font-size: 16px; font-weight: 700; }
 .call-link { min-height: 44px; padding: 6px 10px; border: 0; background: transparent; color: rgba(255, 255, 255, 0.82); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
 .call-note { color: rgba(255, 255, 255, 0.5); font-size: 11px; line-height: 1.6; text-align: center; max-width: 340px; }
 .call :focus-visible { outline: 2px solid #2fe0c8; outline-offset: 2px; }
@@ -292,12 +291,13 @@ dialog.visitor-dialog.bottom-sheet.call-dialog {
 /* ---------- closer to the reference screens ---------- */
 /* The home tab (start hub and chat) is a full screen of its own on phones: the visit's status bar stays on the other tabs. */
 @media (max-width: 1023px) {
-  .visitor-plan:not([data-wide="true"]):has(#visitor-panel-assistant:not([hidden])) > .topbar,
+  /* The brand row and the event name (the page's h1) stay; only the status pills step aside. */
+  .visitor-plan:not([data-wide="true"]):has(#visitor-panel-assistant:not([hidden])) > .topbar .topbar-actions,
   .visitor-plan:not([data-wide="true"]):has(#visitor-panel-assistant:not([hidden])) > .guide,
   .visitor-plan:not([data-wide="true"]):has(#visitor-panel-assistant:not([hidden])) > .proposal-reminder { display: none; }
   .visitor-plan:not([data-wide="true"]) .chat-screen {
     display: flex; flex-direction: column; margin: 0; padding: 4px 0 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
-    height: calc(100dvh - 96px - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+    height: calc(100dvh - 164px - env(safe-area-inset-bottom) - env(safe-area-inset-top));
   }
   .visitor-plan:not([data-wide="true"]) .chat-screen .chat-log { flex: 1; min-height: 0; max-height: none; }
 }
@@ -353,3 +353,148 @@ dialog.visitor-dialog.bottom-sheet.call-dialog {
 .call[data-stage="nav"] .call-map .leaflet-top { top: 64px; }
 .call[data-stage="nav"] .call-map .pm-tools, .call[data-stage="nav"] .call-map .pm-segment { top: 76px; }
 .call .call-map .pm-legend, .call .call-map .pm-notice { display: none; }
+
+/* ============================================================
+   Batch 2: the rest of the reference board (البداية، مساري، قائمة المحطة، دلّني، الخريطة، حولي، أنا، التقييم)
+   ============================================================ */
+
+/* ---------- البداية (chat way in): mascot, greeting, four kinds of outing ---------- */
+.start-chat { justify-items: center; text-align: center; }
+.start-chat .start-mascot { height: clamp(88px, 16svh, 130px) !important; }
+.start-bubble { max-width: 100% !important; width: 100%; text-align: start; border-radius: 20px !important; box-shadow: none !important; font-size: 15px; line-height: 1.8; }
+.start-bubble b { display: block; }
+.start-kinds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; width: 100%; }
+.start-kinds button {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 58px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 18px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow-1);
+}
+.start-kinds button svg { color: var(--purple); }
+.start-kinds button:nth-child(2) svg { color: var(--teal); }
+.start-kinds button:nth-child(4) svg { color: var(--gold); }
+@media (max-height: 640px) { .start-chat .start-mascot { display: none !important; } }
+
+/* ---------- مساري ---------- */
+.visitor-plan .next-stop { background: var(--surface); border-color: var(--line); border-radius: 22px; box-shadow: var(--shadow-1); }
+.visitor-plan .next-stop h2 { color: var(--purple); font-size: 14px; }
+.visitor-plan .visit-quick-actions button { border-color: var(--line); border-radius: 14px; }
+.plan-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.plan-head > div { display: grid; margin-inline-end: auto; }
+.plan-head h2 { font-size: 22px; margin: 0; color: var(--ink); }
+.plan-head small { color: var(--ink-3); font-size: 13px; font-weight: 500; justify-self: start; }
+.plan-live { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--teal-line); background: var(--teal-wash); color: var(--teal-ink); font-family: var(--font-inter), sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+.plan-live i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.visitor-plan .plan-list { padding: 6px; border: 1px solid var(--line); border-radius: 24px; background: var(--surface); box-shadow: var(--shadow-1); }
+.visitor-plan .plan-list::before, .visitor-plan .plan-list .stop .node { display: none; }
+.visitor-plan .plan-list .stop { margin: 0; animation: none; }
+.visitor-plan .plan-list .stop + .stop { border-top: 1px solid var(--line); }
+.visitor-plan .plan-list .stop.current + .stop, .visitor-plan .plan-list .stop.current { border-top-color: transparent; }
+.visitor-plan .plan-list .walk { margin: 0; padding: 6px 14px 0; font-size: 12px; color: var(--ink-3); background: transparent; border: 0; }
+.visitor-plan .plan-list .stop-card { padding: 12px; border: 1px solid transparent; border-radius: 18px; box-shadow: none; background: transparent; animation: none; }
+.visitor-plan .plan-list .stop.current .stop-card { border-color: var(--purple); background: light-dark(#f8f4ff, rgba(142, 43, 255, 0.14)); box-shadow: none; }
+.visitor-plan .plan-list .stop-card.has-art { grid-template-columns: 60px minmax(0, 1fr); row-gap: 2px; }
+.visitor-plan .plan-list .s-name { font-size: 16px; font-weight: 700; grid-row: 1; }
+.visitor-plan .plan-list .s-time { grid-row: 2; color: var(--ink-2); font-size: 13px; }
+.now-tag { margin-inline-start: 8px; padding: 1px 9px; border-radius: 999px; background: #7a35e6; color: #fff; font-size: 11px; font-weight: 700; }
+.plan-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.plan-actions button {
+  display: grid; justify-items: center; gap: 4px; min-height: 64px; padding: 10px 6px; border: 1px solid var(--line); border-radius: 18px;
+  background: var(--surface); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.plan-actions button:nth-child(1) svg { color: var(--pink); }
+.plan-actions button:nth-child(2) svg { color: var(--purple); }
+.plan-actions button:nth-child(3) svg { color: var(--teal); }
+.plan-actions button:disabled { opacity: 0.6; }
+
+/* ---------- قائمة المحطة ---------- */
+.action-sheet .sheet-art { aspect-ratio: 16 / 7; border-radius: 18px; margin-bottom: 10px; }
+.action-sheet .sheet-art svg { width: 22%; }
+.sheet-description { margin: 0 0 8px; color: var(--ink-2); font-size: 14px; line-height: 1.8; }
+.sheet-tags { flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.sheet-tags span { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 999px; background: var(--surface-2); color: var(--ink-2); font-size: 12.5px; }
+.action-list button { border-bottom: 1px solid var(--line); border-radius: 0; }
+.action-list li:last-child button { border-bottom: 0; }
+.action-list button svg { color: var(--purple); }
+.action-list button.danger svg { color: currentColor; }
+
+/* ---------- دلّني ---------- */
+.dir-sheet .dir-pickers label { position: relative; padding: 8px 14px 8px 44px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); font-size: 12px; color: var(--ink-3); }
+.dir-sheet .dir-pickers label::after {
+  content: ""; position: absolute; inset-inline-end: 14px; top: 50%; width: 10px; height: 10px; margin-top: -5px; border-radius: 50%; border: 3px solid var(--purple); background: var(--surface);
+}
+.dir-sheet .dir-pickers label + label::after { border-color: var(--call-teal); }
+.dir-sheet .dir-pickers select { border: 0; padding: 2px 0; background: transparent; font-size: 15px; font-weight: 600; min-height: 32px; }
+.dir-sheet .dir-pickers button.yes { min-height: 50px; border-radius: 999px; font-weight: 700; }
+.dir-sheet .dir-steps li { border-radius: 16px; }
+.dir-sheet .dir-foot { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--purple); border-radius: 18px; background: light-dark(#f8f4ff, rgba(142, 43, 255, 0.14)); }
+.dir-sheet .dir-foot button { justify-content: center; min-height: 48px; border-radius: 999px; font-weight: 700; }
+.dir-sheet .dir-foot button:first-of-type { border: 0; background: var(--grad); color: #fff; }
+
+/* ---------- الخريطة ---------- */
+.map-switch { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); }
+.map-switch button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 16px; border: 0; border-radius: 999px; background: transparent; color: var(--ink-2); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.map-switch button[aria-pressed="true"] { background: #7a35e6; color: #fff; }
+.map-stop {
+  display: grid; grid-template-columns: 60px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; margin-top: 10px; padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 20px; background: var(--surface); color: var(--ink); font: inherit; text-align: start; cursor: pointer; box-shadow: var(--shadow-1);
+}
+.map-stop .activity-art { aspect-ratio: 1; border-radius: 14px; }
+.map-stop span { display: grid; min-width: 0; }
+.map-stop b { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.map-stop small { color: var(--ink-3); font-size: 12.5px; }
+.map-stop > svg { color: var(--ink-3); }
+
+/* ---------- حولي ---------- */
+.nearby-panel h2 { font-size: 24px; margin: 0; }
+.nearby-sub { margin: 0 0 12px; color: var(--ink-2); font-size: 14px; }
+.nearby-panel .nearby-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.nearby-panel .nearby-tile { flex-direction: column; justify-content: center; gap: 6px; min-height: 92px; padding: 12px 6px; border-radius: 18px; background: var(--surface); font-size: 13px; font-weight: 600; text-align: center; box-shadow: var(--shadow-1); }
+.nearby-panel .nearby-icon { background: transparent; width: 32px; height: 32px; }
+.nearby-panel .nearby-tile:nth-child(1) .nearby-icon { color: var(--blue); }
+.nearby-panel .nearby-tile:nth-child(2) .nearby-icon { color: var(--pink); }
+.nearby-panel .nearby-tile:nth-child(3) .nearby-icon { color: var(--purple); }
+.nearby-panel .nearby-tile:nth-child(4) .nearby-icon { color: #e5484d; }
+.nearby-panel .nearby-tile:nth-child(5) .nearby-icon { color: var(--teal); }
+.nearby-panel .nearby-tile:nth-child(6) .nearby-icon { color: var(--gold); }
+.nearby-panel .nearby-tile[aria-pressed="true"] { border-color: var(--purple); background: light-dark(#f8f4ff, rgba(142, 43, 255, 0.14)); }
+.nearby-panel .nearby-origin { margin-top: 16px; font-size: 16px; }
+.nearby-panel .nearby-results li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 12px; align-items: center; border-radius: 18px; }
+.nearby-panel .nearby-results li > .activity-art { grid-row: 1 / span 2; aspect-ratio: 1; border-radius: 12px; }
+.nearby-panel .nearby-results .nearby-actions { grid-column: 2; justify-content: flex-start; }
+
+/* ---------- أنا ---------- */
+.me-hello { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow-1); margin-bottom: 12px; }
+.me-hello img { width: 56px; height: 56px; border-radius: 50%; background: #fff; border: 1px solid var(--line); object-fit: cover; }
+.me-hello div { display: grid; }
+.me-hello strong { font-size: 16px; }
+.me-hello small { color: var(--ink-3); font-size: 13px; }
+.me-panel > section { padding: 14px; margin-bottom: 12px; border: 1px solid var(--line); border-radius: 20px; background: var(--surface); }
+.me-panel > section > h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; font-size: 16px; }
+.me-panel > section > h2::before { content: ""; width: 8px; height: 22px; border-radius: 4px; background: var(--purple); }
+.me-panel > section:nth-of-type(2) > h2::before { background: var(--blue); }
+.me-panel > section:nth-of-type(3) > h2::before { background: var(--orange); }
+.me-panel > section:nth-of-type(4) > h2::before { background: var(--call-teal); }
+.me-panel .me-facts div { background: transparent; border-bottom: 1px solid var(--line); border-radius: 0; padding: 10px 2px; }
+.me-panel .me-facts div:last-child { border-bottom: 0; }
+
+/* audio output picker (where the browser supports choosing one) */
+.call-output { position: relative; display: inline-grid; }
+.call-output-menu { position: absolute; bottom: calc(100% + 10px); left: 0; z-index: 5; display: grid; gap: 2px; min-width: 220px; padding: 6px; border-radius: 16px; background: #fff; color: #2d1b4f; box-shadow: 0 10px 30px rgba(8, 2, 24, 0.4); direction: rtl; }
+.call-output-menu button { min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: transparent; color: inherit; font-size: 14px; text-align: start; }
+.call-output-menu button[aria-checked="true"] { background: #f1e9ff; font-weight: 700; }
+
+/* visit status bar: one compact row under the logo, like the reference header */
+@media (max-width: 1023px) {
+  .visitor-plan:not([data-wide="true"]) .topbar-actions { flex-wrap: nowrap; min-width: 0; max-width: 100%; }
+  .visitor-plan:not([data-wide="true"]) .topbar-actions .live-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .visitor-plan:not([data-wide="true"]) .topbar-actions .btn-icon { flex: none; width: 40px; height: 40px; }
+}
+.visitor-plan .plan-list .s-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 12.5px; margin-top: 2px; }
+.visitor-plan .plan-list .stop-actions { margin-top: 6px; }
+.visitor-plan .plan-list .stop-actions .directions-link { min-height: 36px; padding: 4px 12px; font-size: 12.5px; }
+.visitor-plan .plan-list .stop-more { width: 36px; height: 36px; }
+
+.start-chat-title { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+.welcome-flow[data-mode="chat"] .app-topbar { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 8px; text-align: center; }
+
+/* Route-stop chips on the map: white names on the zone colour darkened to 4.5:1. */
+.pm-key { background: var(--zk, var(--zc, #7a35e6)); }

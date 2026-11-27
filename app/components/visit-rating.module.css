@@ -77,3 +77,8 @@
 
 /* Identity guide: the cheering mascot thanks the visitor. */
 .mascot { justify-self: center; margin-inline: auto; width: auto; height: 96px; }
+
+/* Reference «تقييم الليلة»: the cheering mascot on top, a larger title, a roomier card. */
+.card { padding: 18px 16px; border-radius: 22px; }
+.title { font-size: 18px; font-weight: 700; }
+.mascot { justify-self: center; height: 84px; width: auto; }

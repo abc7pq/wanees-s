@@ -22,7 +22,7 @@ type VisitorOffer = { incentive: IncentiveDisplay; claimed: boolean };
 type EventCatalog = {
   site: { name: string };
   zones: { id: string; name: string }[];
-  activities: { id: string; name: string; zone?: string; type?: string; image?: string | null; interests: string[]; moods: string[] }[];
+  activities: { id: string; name: string; zone?: string; type?: string; image?: string | null; description?: string; tags?: string[]; min_age?: number | null; interests: string[]; moods: string[] }[];
   locations?: { id: string; label: string; status: string; type: string; description?: string; zone?: string; aliases?: string[] }[];
   routeGraph?: { nodes: GpsRouteNode[] };
 };
@@ -365,6 +365,8 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
   const [speakerMuted, setSpeakerMuted] = useState(false);
   const speakerMutedRef = useRef(false);
   const callNavRequestRef = useRef(0);
+  const [callOutputs, setCallOutputs] = useState<Array<{ id: string; label: string }>>([]);
+  const [callOutputId, setCallOutputId] = useState("");
   const initialTab: VisitorTabId = entryRoute?.screen === "tab" ? entryRoute.tab : entryRoute ? "map" : "itinerary";
   const [activeTab, setActiveTab] = useState<VisitorTabId>(() => initialTab);
   const [mapVisited, setMapVisited] = useState(false);
@@ -1209,6 +1211,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
 
   const closeVoice = useCallback(() => {
     callNavRequestRef.current += 1;
+    setCallOutputs([]);
     setCallStage({ kind: "base" });
     setCallWorking(false);
     setCallRoute(null);
@@ -1369,6 +1372,8 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
         });
         realtimeCallRef.current = handle;
         setVoiceMode("realtime");
+        // Where the browser can choose the output (not iOS Safari), the speaker button lists the devices.
+        void handle.outputs().then((devices) => { if (realtimeCallRef.current === handle) { setCallOutputs(devices); setCallOutputId(devices[0]?.id ?? ""); } });
         // A nudge from the last few minutes is still worth saying once the greeting is done.
         const recent = lastNudgeRef.current;
         if (recent && Date.now() - recent.at < 180_000) handle.notify(recent.text);
@@ -1912,6 +1917,21 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
       showToast("ما قدرت أشارك المحطة من هذا المتصفح.");
     }
   };
+  // Share tonight's stops as text: names and times only, never the session or the plan id.
+  const sharePlan = async () => {
+    const stops = state?.itinerary?.stops ?? [];
+    if (!stops.length) return;
+    const url = `${window.location.origin}${urlSynced ? `/e/${encodeURIComponent(eventSlug)}` : window.location.pathname}`;
+    const text = `مساري الليلة${eventName ? ` في ${eventName}` : ""}:\n${stops.map((stop) => `${fmt(stop.start)} ${stop.name}`).join("\n")}\nرتّب جولتك مع ونيس:`;
+    try {
+      if (navigator.share) { await navigator.share({ title: "مساري الليلة", text, url }); return; }
+      await navigator.clipboard.writeText(`${text} ${url}`);
+      showToast("نسخت لك مسارك.");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      showToast("ما قدرت أشارك المسار من هذا المتصفح.");
+    }
+  };
   const showMap = (id?: string) => {
     setMapFocus(id ?? null);
     revealMap();
@@ -1961,6 +1981,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           {welcomeMode === "chat"
             ? <button type="button" className="btn-icon" aria-label="رجوع" disabled={isBuildingPlan} onClick={() => setWelcomeMode("hub")}><Icon name="chevron" size={20}/></button>
             : <span />}
+          {welcomeMode === "chat" && <h1 className="start-chat-title">شات مع ونيس</h1>}
           <a className="brand" href="/" aria-label="ونيس — الرئيسية"><BrandLogo height={welcomeMode === "chat" ? 34 : 30} label="ونيس" priority /></a>
         </header>
 
@@ -1974,10 +1995,18 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           </section>
         ) : (
           <section className="start-chat" aria-label="شات مع ونيس">
-            <div className="chat-row">
-              <span className="chat-avatar" aria-hidden="true"><img src="/brand/mascot-head.webp" alt="" width={36} height={36} /></span>
-              <p className="bubble agent tagline"><b>هلا والله! قل لي وش بالك الليلة</b>مين معك، وش تحبون، وكم عندكم وقت. أفهمك من كلامك وأرتّب لك جولتك على طول.</p>
-            </div>
+            <Mascot mood="wave" height={130} className="welcome-mascot start-mascot" priority />
+            <p className="bubble agent tagline start-bubble"><b>هلا والله! قل لي وش بالك الليلة</b>مين معك، وش تحبون، وكم عندكم وقت. أفهمك من كلامك وأرتّب لك جولتك على طول.</p>
+            {!mustRegister && eventLoadState !== "error" && (
+              <div className="start-kinds" role="group" aria-label="وش نوع المشوار؟ اضغط وأكتبها لك">
+                {([["عروض وفعاليات", "نبي عروض وفعاليات", "show"], ["مغامرة وألعاب", "نبي مغامرة وألعاب", "game"], ["تجربة عائلية", "معي عائلتي", "family"], ["مطاعم ومقاهي", "نبي مكان ناكل فيه", "food"]] as const).map(([label, phrase, icon]) => (
+                  <button key={label} type="button" disabled={isBuildingPlan} onClick={() => setOpeningText((current) => current.includes(phrase) ? current : current.trim() ? `${current.trim()}، ${phrase}` : phrase)}>
+                    <Icon name={icon === "show" ? "ticket" : icon === "game" ? "gamepad" : icon === "family" ? "family" : "utensils"} size={22}/>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {isFixture && <p className="visitor-note">{isPitch ? "عرض تجريبي · الأسعار والمواعيد للشرح" : "موسم 2026-27"}</p>}
             {isBuildingPlan && (
               <div className="chat-preview" aria-live="polite">
@@ -2172,6 +2201,8 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
 
   const activityKind = (id: string) => eventCatalog?.activities.find((activity) => activity.id === id)?.type ?? null;
   const activityImage = (id: string) => eventCatalog?.activities.find((activity) => activity.id === id)?.image ?? null;
+  const stopMenuActivity = stopMenuStop ? eventCatalog?.activities.find((activity) => activity.id === stopMenuStop.act_id) ?? null : null;
+  const stopMenuZone = stopMenuStop ? eventCatalog?.zones.find((zone) => zone.id === stopMenuStop.zone)?.name ?? "" : "";
   const lastPlanMessage = messages.reduce((last, message, index) => (message.plan?.length ? index : last), -1);
   // The call screen's view for this render, built from the same state the other screens read.
   const callStops: CallPlanStop[] = (it?.stops ?? []).map((stop, index) => ({
@@ -2324,8 +2355,15 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
               ))}
             </div>}
           </div>}
-          <div className="sec"><h2 id="visitor-itinerary-title">مسارك الليلة</h2><span className="total"><Icon name="price" size={15}/>{partyCount > 1 ? `${it.total_cost * partyCount} ريال ${forParty(partyCount)}` : `${it.total_cost} ريال للأنشطة`}</span></div>
-          <div className="rail">
+          <div className="sec plan-head">
+            <div>
+              <h2 id="visitor-itinerary-title">مسارك الليلة</h2>
+              {it.stops.length > 0 && <small dir="ltr">{fmt(it.stops[0].start)} – {fmt(it.stops[it.stops.length - 1].end)}</small>}
+            </div>
+            {modeRef.current === "durable" && liveStatus === "live" && (venueOpen || isPitch) && <span className="plan-live" aria-hidden="true"><i /> LIVE</span>}
+            <span className="total"><Icon name="price" size={15}/>{partyCount > 1 ? `${it.total_cost * partyCount} ريال ${forParty(partyCount)}` : `${it.total_cost} ريال للأنشطة`}</span>
+          </div>
+          <div className="rail plan-list">
             {it.stops.map((s, i) => {
               const past = s.end <= now;
               const cur = !closedPreview && s.start <= now && s.end > now;
@@ -2339,7 +2377,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                   )}
                   <div className="stop-card has-art">
                     <ActivityArt kind={activityKind(s.act_id)} image={activityImage(s.act_id)} label={s.name} />
-                    <div className="s-time"><Icon name="clock" size={14}/><ItineraryTimeRange start={fmt(s.start)} end={fmt(s.end)} /></div>
+                    <div className="s-time"><Icon name="clock" size={14}/><ItineraryTimeRange start={fmt(s.start)} end={fmt(s.end)} />{cur && <b className="now-tag">الآن</b>}</div>
                     <div className="s-name">{s.name}</div>
                     <div className="s-meta">
                       <span className="price"><Icon name="price" size={14}/>{price.perPerson}</span>
@@ -2356,6 +2394,13 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
               );
             })}
           </div>
+          {it.stops.length > 0 && (
+            <div className="plan-actions" role="group" aria-label="إجراءات المسار">
+              <button type="button" onClick={() => { selectTab("assistant"); setHomeView("chat"); requestAnimationFrame(() => chatInputRef.current?.focus()); showToast("قل لي وش تبي تغيّر، مثل: «بدّل العرض» أو «شيل آخر محطة»."); }}><Icon name="pencil" size={20}/> تعديل</button>
+              <button type="button" disabled={chatPending} onClick={() => { selectTab("assistant"); void sendChat("رشّح لي نشاط يناسب ذوقي"); }}><Icon name="plus" size={20}/> إضافة محطة</button>
+              <button type="button" onClick={() => void sharePlan()}><Icon name="share" size={20}/> مشاركة</button>
+            </div>
+          )}
 
           {modeRef.current === "durable" && !isPitch && (
             <LockScreenNudges eventSlug={eventSlug} openPath={urlSynced ? `/e/${encodeURIComponent(eventSlug)}` : onEventsPath ? `/events/${encodeURIComponent(eventSlug)}` : "/demo"}
@@ -2380,17 +2425,27 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
         )}
 
         <section id="visitor-panel-map" className="visitor-map" role="region" aria-labelledby="visitor-tab-map" tabIndex={0} hidden={selectedTab !== "map"}>
+          <div className="map-switch" role="group" aria-label="طريقة العرض">
+            <button type="button" aria-pressed="true"><Icon name="map" size={16}/> خريطة</button>
+            <button type="button" aria-pressed="false" onClick={() => setShowPlaces(true)}>قائمة الأماكن</button>
+          </div>
           {airGuide && <div className="guide-bar"><button type="button" className="yes" onClick={() => setGuideOpen(true)}><Icon name="compass" size={16}/> البوصلة · {Math.round(airGuide.remainingM)} م إلى {airGuide.destName}</button><button type="button" className="directions-link" onClick={stopGuide}>إنهاء التوجيه</button></div>}
           {it && (selectedTab === "map" || mapVisited) && (map2dEnabled
             ? <VenueGeoMap stops={it.stops} eventSlug={eventSlug} focusId={mapFocus} path={mapPath} me={airGuide ? { x: airGuide.x, y: airGuide.y, target: airGuide.target, heading: airGuide.heading ?? null, accuracyM: airGuide.accuracyM ?? null } : null} crowd={liveCrowd} onNavigate={isPitch ? undefined : (placeId) => startAirGuide(undefined, placeId)} />
             : <div className="map-card" aria-label="مناطق المسار"><strong>مناطق مسارك</strong><div className="route-zone-list">{[...new Set(it.stops.map((stop) => stop.zone))].map((zoneId) => <span key={zoneId}>{eventCatalog?.zones.find((zone) => zone.id === zoneId)?.name ?? zoneId}</span>)}</div></div>)}
+          {headline && it && (
+            <button type="button" className="map-stop" aria-label={`${headline.name}، اعرضها على الخريطة`} onClick={() => setMapFocus(headline.zone)}>
+              <ActivityArt kind={activityKind(headline.act_id)} image={activityImage(headline.act_id)} />
+              <span><b>{headline.name}</b><small>{headlineZone}{headline.walk_min > 0 ? ` · ${headline.walk_min} د مشي` : ""} · {fmt(headline.start)}</small></span>
+              <Icon name="chevron" size={18}/>
+            </button>
+          )}
           <button type="button" className="directions-link map-directions" onClick={(event) => openDirections(undefined, event.currentTarget)}>اتجاهات المشي</button>
         </section>
 
       <section id="visitor-panel-assistant" className={`home-panel${homeView === "chat" ? " chat-dock chat-screen" : ""}`} data-view={homeView} role="region" aria-labelledby="visitor-tab-assistant" tabIndex={0} hidden={selectedTab !== "assistant"}>
         {homeView === "hub" ? (
           <div className="start-hub">
-            <div className="start-logo"><BrandLogo height={64} wordmark label="ونيس" /></div>
             <h2>ابدأ مع ونيس</h2>
             <p className="start-tagline">{it ? "اسأل، عدّل مسارك، أو خلّه يدلّك. اختر الطريقة اللي تريحك." : "قل لونيس مين معك ووش تحبون، ويرتّب لك مسارك."}</p>
             <Mascot mood="wave" height={150} className="start-mascot" />
@@ -2542,6 +2597,8 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
               realtimeCallRef.current?.setSpeakerMuted(next);
               setSpeakerMuted(next);
             }}
+            outputs={voiceMode === "realtime" ? callOutputs : []} outputId={callOutputId}
+            onOutput={(deviceId) => void realtimeCallRef.current?.setOutput(deviceId).then((ok) => { if (ok) setCallOutputId(deviceId); else showToast("ما قدرت أغيّر مخرج الصوت من هذا المتصفح."); })}
             onChat={callToChat}
             onGuide={!isPitch && upcoming ? () => void startCallNav(upcoming.act_id, upcoming.name) : null}
             onCard={(card) => {
@@ -2558,7 +2615,15 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
 
       {stopMenuStop && (
         <VisitorDialog label={stopMenuStop.name} className="action-sheet" opener={stopMenuOpener.current} onClose={() => setStopMenuId(null)}>
-          <p className="action-sheet-meta"><Icon name="clock" size={14}/> <ItineraryTimeRange start={fmt(stopMenuStop.start)} end={fmt(stopMenuStop.end)} /></p>
+          <ActivityArt className="sheet-art" kind={activityKind(stopMenuStop.act_id)} image={activityImage(stopMenuStop.act_id)} label={stopMenuStop.name} />
+          {stopMenuActivity?.description && <p className="sheet-description">{stopMenuActivity.description}</p>}
+          <p className="action-sheet-meta sheet-tags">
+            <span><Icon name="clock" size={14}/> <ItineraryTimeRange start={fmt(stopMenuStop.start)} end={fmt(stopMenuStop.end)} /></span>
+            <span>{stopMenuStop.end - stopMenuStop.start} د</span>
+            <span>{stopPriceLabel(stopMenuStop.price, partyCount).perPerson}</span>
+            {stopMenuZone && <span>{stopMenuZone}</span>}
+            {stopMenuActivity?.min_age ? <span>من عمر {stopMenuActivity.min_age}</span> : null}
+          </p>
           <ul className="action-list" role="list">
             {!isPitch && <li><button type="button" onClick={() => { const opener = stopMenuOpener.current ?? undefined; setStopMenuId(null); openDirections(stopMenuStop.act_id, opener); }}><Icon name="walk" size={18}/> اتجاهات المشي</button></li>}
             <li><button type="button" onClick={() => { setStopMenuId(null); showMap(stopMenuStop.zone); }}><Icon name="map" size={18}/> اعرضها على الخريطة</button></li>
