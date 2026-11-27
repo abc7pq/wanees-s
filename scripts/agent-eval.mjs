@@ -25,6 +25,7 @@
 import { writeFileSync } from "node:fs";
 import { validateA2uiMessages } from "../app/lib/a2ui.ts";
 import { guardrailViolations } from "../app/lib/agent-guardrails.ts";
+import { clockChecks, digits } from "./agent-eval-clock.mjs";
 
 const positional = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
 const flag = (name) => process.argv.find((arg) => arg.startsWith(`--${name}=`))?.split("=").slice(1).join("=");
@@ -80,9 +81,8 @@ const ticket = catalog.site?.entry_ticket;
 const closeMinute = ((value) => (value < 100 ? value * 60 : value) % 1440)(catalog.site.opening.to);
 const closeClock = `${String(Math.floor(closeMinute / 60)).padStart(2, "0")}:${String(closeMinute % 60).padStart(2, "0")}`;
 const closePattern = new RegExp([escape(closeClock), closeMinute === 0 ? "midnight|12" : String(closeMinute / 60 % 12 || 12)].join("|"), "i");
-const slots = new Set(catalog.activities.flatMap((a) => (a.schedule?.type === "slots" ? a.schedule.slots : [])).map((m) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`));
+const slots = new Set([...catalog.activities.flatMap((a) => (a.schedule?.type === "slots" ? a.schedule.slots : [])), closeMinute]);
 
-const digits = (s) => s.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660));
 const CLAIM = /(?:^|[\s«(])(?:غيّرت|غيرت|عدّلت|عدلت|حجزت|دفعت|ألغيت|طبّقت|طبقت|أضفت|اضفت|شلت|حذفت|بدّلت|بدلت|اعتمدت)(?:ه|ها|لك|لكم)?(?=[\s،.»)]|$)/;
 const PROVIDER = /chat ?gpt|openai|open ai|\bgpt\b|gpt-?\d|claude|anthropic|gemini|llama|شات ?جي ?بي ?تي|جي ?بي ?تي|اوبن ?اي|أوبن|كلود|جيميني/i;
 const planIds = (data) => (data?.itinerary?.stops ?? []).map((stop) => stop.act_id).join(",");
@@ -112,11 +112,13 @@ function check(personaName, msg, res, expect = {}) {
   if (/[\u{1F300}-\u{1FAFF}]/u.test(reply)) problems.push("emoji in reply");
   // independent grounding: every number must exist somewhere in the structured response
   const raw = digits(JSON.stringify({ sources: data.sources, itinerary: data.itinerary, proposal: data.proposal, next: data.next, clock: data.clock, ui: data.ui, facts: data.facts, directions: data.directions, plan: expect.plan, prefs: expect.prefs }));
-  // catalog times are stored as minutes after midnight; the reply shows HH:MM
-  const asClock = (raw.match(/\d+/g) ?? []).map(Number).flatMap((n) => n <= 24 ? [n * 60, n] : [n]).filter((n) => n >= 0 && n <= 1500).map((n) => `${String(Math.floor(n / 60) % 24).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`);
+  // Handle explicit AM/PM independently so a matching face with the wrong period fails.
+  const minutes = (raw.match(/\d+/g) ?? []).map(Number).flatMap((n) => n <= 24 ? [n * 60, n] : [n]).filter((n) => n >= 0 && n <= 1500);
+  const clocks = clockChecks(reply, minutes, { includeBare: false });
+  const asClock = minutes.map((n) => `${String(Math.floor(n / 60) % 24).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`);
   const corpus = raw + " " + asClock.join(" ");
   const nums = digits(reply).match(/\d+(?:[.:]\d+)?/g) ?? [];
-  const ungrounded = nums.filter((n) => !corpus.includes(n) && !(expect.allowNumbers ?? []).includes(n));
+  const ungrounded = [...clocks.unknown, ...(clocks.plain.match(/\d+(?:[.:]\d+)?/g) ?? []).filter((n) => !corpus.includes(n) && !(expect.allowNumbers ?? []).includes(n))];
   if (ungrounded.length) problems.push(`ungrounded numbers: ${ungrounded.join(",")}`);
   // guardrails apply to every reply, whatever was asked
   for (const violation of guardrailViolations(reply, catalogText)) problems.push(`guardrail: ${violation}`);
@@ -220,7 +222,7 @@ for (run = 1; run <= runs; run += 1) {
     { msg: "وش العروض الجاية؟", intent: ["schedule"], ui: true, noProposal: true,
       verify: (data, reply) => {
         const problems = [];
-        for (const time of reply.match(/\b\d{2}:\d{2}\b/g) ?? []) if (!slots.has(time) && time !== closeClock) problems.push(`schedule time ${time} is not a published slot`);
+        for (const time of clockChecks(reply, slots).unknown) problems.push(`schedule time ${time} is not a published slot`);
         if ((data.sources ?? []).some((s) => !s.nextStartsAt)) problems.push("schedule card without a start time");
         return problems;
       } },
