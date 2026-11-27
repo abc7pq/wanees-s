@@ -4,6 +4,16 @@
 import { chromium } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+// Redesign: the first screen is «ابدأ مع ونيس»; the message box opens from «شات مع ونيس».
+async function openingBox(page) {
+  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const chat = page.getByRole("button", { name: /^شات مع ونيس/ });
+  await box.or(chat).first().waitFor();
+  if (!(await box.isVisible())) await chat.click();
+  return box;
+}
+
+
 const visitor = process.env.WANEES_BASE_URL ?? "http://127.0.0.1:3100";
 const admin = process.env.WANEES_ADMIN_BASE_URL ?? "http://127.0.0.1:3200";
 const out = process.argv[2] ?? "docs/screenshots";
@@ -20,7 +30,7 @@ const offlineTiles = (target) => target.route("https://server.arcgisonline.com/*
 
 async function startVisit(page) {
   await page.goto(`${visitor}/e/${slug}`);
-  await page.getByRole("textbox", { name: "قل لي وش بالك" }).fill(sentence);
+  await (await openingBox(page)).fill(sentence);
   await page.getByRole("button", { name: /^يلا/ }).click();
   await page.getByRole("heading", { name: "مسارك الليلة" }).waitFor();
   await settle(page, 900);
@@ -36,7 +46,7 @@ await shot(page, "01-home");
 
 // One sentence instead of a questionnaire.
 await page.goto(`${visitor}/e/${slug}`);
-await page.getByRole("textbox", { name: "قل لي وش بالك" }).waitFor();
+await (await openingBox(page)).waitFor();
 await settle(page, 500);
 await shot(page, "02-talk");
 
@@ -70,7 +80,7 @@ await shot(page, "04-change-proposal");
 await page.getByRole("button", { name: "اعتمد البديل" }).click();
 await settle(page, 800);
 
-await page.getByRole("navigation", { name: "التنقل الرئيسي" }).getByRole("button", { name: /^ونيس/ }).click();
+await page.getByRole("navigation", { name: "التنقل الرئيسي" }).getByRole("button", { name: /^الرئيسية/ }).click();
 await page.getByRole("textbox", { name: "اكتب طلبك" }).fill("وش أبدأ فيه مع عيالي؟");
 await page.keyboard.press("Enter");
 await page.waitForTimeout(6000);

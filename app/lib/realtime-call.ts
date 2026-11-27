@@ -3,6 +3,7 @@
 // لا يُخزَّن صوت ولا نص كامل في المتصفح.
 import type { VoiceCallState } from "./voice-call.ts";
 import { SPOKEN_IDENTITY_CORRECTION, spokenReplyLeaks } from "./agent-guardrails.ts";
+import { createAudioMeter, type AudioMeter } from "./audio-meter.ts";
 
 export type RealtimeToolHandlers = {
   ask_wanees_engine: (args: { request: string }) => Promise<unknown>;
@@ -212,7 +213,35 @@ export type RealtimeCallHandle = {
   setMuted: (muted: boolean) => void;
   /** تنبيه استباقي من المحرك: يُقال للزائر بصوت ونيس أثناء المكالمة. */
   notify: (text: string) => void;
+  /** يكتم صوت ونيس في السماعة (المكالمة تبقى شغالة). */
+  setSpeakerMuted: (muted: boolean) => void;
+  /** مقياس الصوت الفعلي: ميكروفون الزائر وصوت ونيس، لموجات شاشة المكالمة. لا تسجيل. */
+  meters: () => { mic: AudioMeter | null; voice: AudioMeter | null };
+  /** قياسات المكالمة للتقييم (docs/VOICE_EVALUATION.md): زمن البدء، وزمن أول صوت بعد كل دور للزائر. أرقام فقط. */
+  timings: () => CallTimings;
 };
+
+export type CallTimings = { startMs: number | null; replyMs: number[] };
+
+/** يقيس من أحداث Realtime نفسها: نهاية كلام الزائر ← أول صوت من الرد. منفصل ليُختبر وحده. */
+export function createCallTimer(now: () => number = () => Date.now()) {
+  const startedAt = now();
+  let startMs: number | null = null;
+  let stoppedAt: number | null = null;
+  const replyMs: number[] = [];
+  return {
+    opened() { if (startMs === null) startMs = now() - startedAt; },
+    event(type: unknown) {
+      if (type === "input_audio_buffer.speech_stopped") stoppedAt = now();
+      else if (stoppedAt !== null && (type === "response.output_audio.delta" || type === "response.output_audio_transcript.delta" || type === "output_audio_buffer.started")) {
+        replyMs.push(now() - stoppedAt);
+        if (replyMs.length > 50) replyMs.shift();
+        stoppedAt = null;
+      }
+    },
+    timings: (): CallTimings => ({ startMs, replyMs: [...replyMs] }),
+  };
+}
 
 /** بعد قطع رد سرّب مزوّد النموذج: الصوت يقول سطر الهوية الثابت فقط. */
 export function correctionEvents() {
@@ -243,10 +272,26 @@ export async function startRealtimeCall(options: StartOptions): Promise<Realtime
   let mic: MediaStream | null = null;
   let closed = false;
   let controller: ReturnType<typeof createRealtimeController> | null = null;
+  const timer = createCallTimer();
+  // Analysers for the call screen's waveform. Optional: a browser without Web Audio still gets the call.
+  let audioContext: AudioContext | null = null;
+  let micMeter: AudioMeter | null = null;
+  let voiceMeter: AudioMeter | null = null;
+  const meterContext = () => {
+    if (audioContext) return audioContext;
+    try {
+      const Ctor = window.AudioContext ?? (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      audioContext = Ctor ? new Ctor() : null;
+    } catch { audioContext = null; }
+    return audioContext;
+  };
 
   const close = (reason: "ended" | "error") => {
     if (closed) return;
     closed = true;
+    micMeter?.close();
+    voiceMeter?.close();
+    void audioContext?.close().catch(() => undefined);
     try { channel.close(); } catch { /* already closed */ }
     try { pc.close(); } catch { /* already closed */ }
     mic?.getTracks().forEach((track) => track.stop());
@@ -254,7 +299,14 @@ export async function startRealtimeCall(options: StartOptions): Promise<Realtime
     options.onEnd(reason);
   };
 
-  pc.ontrack = (event) => { audio.srcObject = event.streams[0]; };
+  pc.ontrack = (event) => {
+    audio.srcObject = event.streams[0];
+    const context = meterContext();
+    if (context && event.streams[0]) {
+      voiceMeter?.close();
+      voiceMeter = createAudioMeter(context, event.streams[0]);
+    }
+  };
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "failed" || pc.connectionState === "disconnected") close("error");
   };
@@ -264,9 +316,14 @@ export async function startRealtimeCall(options: StartOptions): Promise<Realtime
   };
   controller = createRealtimeController({ ...options, send, onEnd: () => close("ended") });
   channel.onmessage = (message) => {
-    try { controller?.handle(JSON.parse(String(message.data))); } catch { /* ignore malformed event */ }
+    try {
+      const event = JSON.parse(String(message.data));
+      timer.event(event?.type);
+      controller?.handle(event);
+    } catch { /* ignore malformed event */ }
   };
   channel.onopen = () => {
+    timer.opened();
     options.onState("speaking");
     controller?.start();
   };
@@ -274,6 +331,8 @@ export async function startRealtimeCall(options: StartOptions): Promise<Realtime
   try {
     mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
     for (const track of mic.getAudioTracks()) pc.addTrack(track, mic);
+    const context = meterContext();
+    if (context) micMeter = createAudioMeter(context, mic);
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     const response = await fetch("https://api.openai.com/v1/realtime/calls", {
@@ -292,5 +351,8 @@ export async function startRealtimeCall(options: StartOptions): Promise<Realtime
     stop: () => close("ended"),
     setMuted: (muted) => mic?.getAudioTracks().forEach((track) => { track.enabled = !muted; }),
     notify: (text) => { if (!closed) controller?.notify(text); },
+    setSpeakerMuted: (muted) => { audio.muted = muted; },
+    meters: () => ({ mic: micMeter, voice: voiceMeter }),
+    timings: () => timer.timings(),
   };
 }

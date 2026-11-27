@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+// Redesign: the first screen is «ابدأ مع ونيس»; the message box opens from «شات مع ونيس».
+async function openingBox(page) {
+  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const chat = page.getByRole("button", { name: /^شات مع ونيس/ });
+  await box.or(chat).first().waitFor();
+  if (!(await box.isVisible())) await chat.click();
+  return box;
+}
+
+
 const visitor = process.env.WANEES_BASE_URL ?? "http://127.0.0.1:3100";
 const admin = process.env.WANEES_ADMIN_BASE_URL ?? "http://127.0.0.1:3200";
 const sampleEvent = "sample-festival";
@@ -41,7 +51,7 @@ function navTab(page, name) {
 async function buildItinerary(page, path) {
   await page.goto(`${visitor}${path}`);
   // Audit 1.1: the first screen is a conversation. An example chip types a sentence; nothing is required.
-  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const box = (await openingBox(page));
   await expect(box).toBeEnabled();
   await page.getByRole("button", { name: "طلعة شباب" }).click();
   await expect(box).toHaveValue("طلعة شباب");
@@ -70,7 +80,7 @@ test("public pages and organizer sign-in fit the device matrix", async ({ page }
     await expect(page.getByRole("link", { name: "جرّب ونيس" })).toBeVisible();
     await expectResponsive(page);
     await page.goto(`${visitor}/demo`);
-    const start = page.getByRole("textbox", { name: "قل لي وش بالك" });
+    const start = (await openingBox(page));
     await expect(start).toBeEnabled();
     if (size.height < 470) await expect(start).toBeInViewport({ ratio: 1 });
     await expectResponsive(page);
@@ -93,7 +103,7 @@ test("visitor tabs, directions focus, and chat draft survive viewport changes", 
   await expect(page.locator(".stop-card").first()).toBeVisible();
   const itinerary = navTab(page, "مساري");
   const map = navTab(page, "الخريطة");
-  const assistant = navTab(page, "ونيس");
+  const assistant = navTab(page, "الرئيسية");
   await map.click();
   await expect(map).toHaveAttribute("aria-current", "page");
   await expect(page).toHaveURL(/\/e\/boulevard-world-demo\/map$/);
@@ -207,7 +217,7 @@ test("the voice dialog returns visitors to typing on a short phone", async ({ pa
   await page.setViewportSize(widths[2]);
   // /demo stays as the rehearsal alias of the default event.
   await buildItinerary(page, "/demo");
-  await navTab(page, "ونيس").click();
+  await navTab(page, "الرئيسية").click();
   await page.getByRole("button", { name: "ابدأ محادثة صوتية مع ونيس" }).click();
   const call = page.getByRole("dialog", { name: "محادثة صوتية مع ونيس" });
   await expect(call).toBeInViewport();

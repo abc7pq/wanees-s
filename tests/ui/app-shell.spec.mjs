@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+// Redesign: the first screen is «ابدأ مع ونيس»; the message box opens from «شات مع ونيس».
+async function openingBox(page) {
+  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const chat = page.getByRole("button", { name: /^شات مع ونيس/ });
+  await box.or(chat).first().waitFor();
+  if (!(await box.isVisible())) await chat.click();
+  return box;
+}
+
+
 // The app shell (audit 2.1–2.3, 3.2, 3.7): real URLs per screen, a bottom navigation on a 375 px phone,
 // Back that moves between screens and closes sheets, «حولي» with «دلّني», and «أنا».
 const visitor = process.env.WANEES_BASE_URL ?? "http://127.0.0.1:3100";
@@ -14,7 +24,7 @@ function navTab(page, name) {
 
 async function startVisit(page, query = "") {
   await page.goto(`${visitor}${base}${query}`);
-  await page.getByRole("textbox", { name: "قل لي وش بالك" }).fill("طلعة شباب، عندنا ساعتين");
+  await (await openingBox(page)).fill("طلعة شباب، عندنا ساعتين");
   await page.getByRole("button", { name: /^يلا/ }).click();
   await expect(page.getByRole("heading", { name: "مسارك الليلة" })).toBeVisible();
 }
@@ -56,7 +66,7 @@ test("after the first message the visitor lands on «مساري», and each tab 
 // type instead builds the safe starter plan at that moment, so the text promise still holds.
 test("«اتصل بونيس» on the first screen opens the call, and «كمّل بالكتابة» gives a starter plan", async ({ page }) => {
   await page.goto(`${visitor}${base}`);
-  const call = page.getByRole("button", { name: "اتصل بونيس وكلّمه بصوتك" });
+  const call = page.getByRole("button", { name: /^مكالمة مع ونيس/ });
   await expect(call).toBeEnabled();
   await call.click();
   const dialog = page.getByRole("dialog", { name: "محادثة صوتية مع ونيس" });
@@ -66,7 +76,7 @@ test("«اتصل بونيس» on the first screen opens the call, and «كمّل
   await dialog.getByRole("button", { name: "كمّل بالكتابة" }).click();
   await expect(dialog).toBeHidden();
   // The page behind a modal dialog is inert, so the tab bar is checked once the call is closed.
-  await expect(navTab(page, "ونيس")).toHaveAttribute("aria-current", "page");
+  await expect(navTab(page, "الرئيسية")).toHaveAttribute("aria-current", "page");
   await expect(page.getByRole("log")).toContainText("جهزت لك جولة مبدئية");
   await navTab(page, "مساري").click();
   await expect(page.getByRole("heading", { name: "مسارك الليلة" })).toBeVisible();
@@ -75,7 +85,7 @@ test("«اتصل بونيس» on the first screen opens the call, and «كمّل
 
 test("tapping the assistant's A2UI cards: show a place on the map, add an activity and approve it", async ({ page }) => {
   await startVisit(page);
-  await navTab(page, "ونيس").click();
+  await navTab(page, "الرئيسية").click();
   const composer = page.getByRole("textbox", { name: "اكتب طلبك" });
   const log = page.getByRole("log");
 
@@ -86,7 +96,7 @@ test("tapping the assistant's A2UI cards: show a place on the map, add an activi
   await placeCard.getByRole("button", { name: "على الخريطة" }).first().click();
   await expect(page).toHaveURL(new RegExp(`${base}/map$`));
 
-  await navTab(page, "ونيس").click();
+  await navTab(page, "الرئيسية").click();
   await composer.fill("وش فيه عروض حلوة؟");
   await composer.press("Enter");
   const add = log.locator(".a2ui-surface").last().getByRole("button", { name: "أضف لمساري" }).first();
@@ -161,7 +171,7 @@ test("/events/{slug} moves to the canonical /e/{slug} address", async ({ page })
 
 test("«تذكّرني» is opt-in, and a returning guest starts the same mood in one tap", async ({ page, context }) => {
   await startVisit(page);
-  await navTab(page, "ونيس").click();
+  await navTab(page, "الرئيسية").click();
   // Asked once in the chat after the first plan; nothing is remembered until the visitor says yes.
   await page.getByRole("button", { name: "إيه، تذكّرني" }).click();
   await expect(page.locator(".toast")).toContainText("أتذكرك المرة الجاية");

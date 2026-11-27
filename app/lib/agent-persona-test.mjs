@@ -39,6 +39,25 @@ for (const section of ["# الصوت غير الواضح", "# النطق", "# ا
 }
 assert.doesNotMatch(personaInstructions("text"), /# الصوت غير الواضح/, "text persona has no audio rules");
 
+// v8: suggest first, the minimum necessary questions, proactive help from engine data only, one context.
+for (const channel of ["text", "voice", "call"]) {
+  const prompt = personaInstructions(channel);
+  for (const section of ["# الاقتراح أولًا، وأقل أسئلة ممكنة", "# المبادرة (من بيانات المحرك فقط)", "# التخطيط والتنفيذ"]) {
+    assert.ok(prompt.includes(section), `${channel}: persona has ${section}`);
+  }
+  assert.match(prompt, /افهم هدفه الكامل من كلامه/, `${channel}: the whole goal, not single commands`);
+  assert.match(prompt, /اربط كل رغبة بصاحبها/, `${channel}: each wish stays with the person who has it`);
+  assert.match(prompt, /لا تختم كل رد بسؤال من باب العادة/, `${channel}: no automatic closing question`);
+  assert.match(prompt, /مبنية على رقم أو حقيقة موجودة في البيانات/, `${channel}: proactive suggestions are grounded`);
+  assert.match(prompt, /إلا بعد ما تؤكدها <tool_result>/, `${channel}: never claims an action before the system confirms it`);
+  assert.match(prompt, /السياق واحد بين الشات والمكالمة والخريطة ومساره/, `${channel}: one context across screens`);
+}
+assert.doesNotMatch(personaInstructions("call"), /ثلاثة أسئلة قبل أول مسار/, "the call no longer allows a chain of opening questions");
+assert.match(personaInstructions("call"), /لا تسأل سؤالًا ثانيًا قبل أول مسار إلا إذا جوابه يمس السلامة أو حد العمر/, "one opening question at most");
+assert.match(personaInstructions("call"), /والشاشة تعرض الخريطة والمحطات مع كلامك/, "the call explains while the screen shows");
+for (const channel of ["text", "voice", "call"]) assert.match(personaInstructions(channel), /صوتك وشخصيتك أنثوية سعودية/, `${channel}: the female Saudi persona`);
+for (const rule of ["# الأداء الصوتي", "لا تكرري نفس عبارة الانتظار", "بنبرة هادئة ومطمئنة وواضحة"]) assert.ok(personaInstructions("call").includes(rule), `call voice rule: ${rule}`);
+
 // ————— مطابقة الأسماء: كلمة عامة لا تختار نشاطًا —————
 assert.equal(findActivityTarget("وين مطعم البيك؟", site, null, 0, null, new Set(site.activities.keys())), null, "a generic word must not pick «مطعم طنط»");
 assert.equal(findActivityTarget("وين الدولفيناريوم", site, null, 0, null, new Set(site.activities.keys())), "dolphinarium", "a distinctive word still matches");
@@ -122,7 +141,8 @@ assert.match(callGreeting({ hasPlan: false, withKids: true }), /العيال/);
 {
   const fresh = callGreeting({ hasPlan: false, withKids: false, venueName: "بوليفارد وورلد" });
   assert.match(fresh, /رفيقك الليلة في بوليفارد وورلد/);
-  assert.match(fresh, /جاي لحالك ولا مع الأهل/);
+  assert.match(fresh, /مين معك ووش ودّكم فيه الليلة؟ قلها لي بجملة/, "one open invitation instead of a chain of questions");
+  assert.doesNotMatch(fresh, /جاي لحالك ولا مع الأهل/, "no narrow first question");
   assert.equal((fresh.match(/؟/g) ?? []).length, 1, "one question in the opening");
   assert.match(callGreeting({ hasPlan: false, withKids: false, returning: true, lastVisitName: "إطعام الزرافات" }), /جرّبتوا «إطعام الزرافات»، نفس الجو ولا شي جديد/);
   const resumed = callGreeting({ hasPlan: true, withKids: false, resume: true, justFinishedName: "إطعام الزرافات", nextName: "عرض الدولفيناريوم", minutesToNext: 12 });
@@ -156,7 +176,7 @@ assert.match(instructions, /<event_zones>\n[^\n]*منطقة أفريقيا، ا�
   const withTurns = buildCallInstructions({ visitorBrief: brief, suggestions: [], greeting, recentTurns: [{ role: "visitor", text: "أبي شي أهدى للعيال" }, { role: "assistant", text: "أرشّح لك «إطعام الزرافات»." }, { role: "visitor", text: " " }] });
   assert.match(withTurns, /<recent_conversation>\n[^\n]*\nالزائر: أبي شي أهدى للعيال\nونيس: أرشّح لك «إطعام الزرافات»\.\n<\/recent_conversation>/, "the last turns reach the call, empty ones dropped");
   assert.doesNotMatch(instructions, /<recent_conversation>\n/, "no block without turns");
-  assert.ok(personaInstructions("call").includes("# بداية المكالمة: سوالف المرشد"), "the guide-style opening rules exist");
+  assert.ok(personaInstructions("call").includes("# بداية المكالمة: مرشد يبادر"), "the guide-style opening rules exist");
   assert.ok(personaInstructions("call").includes("note_stop_feedback"), "the call knows how to record a stop rating");
 }
 assert.doesNotMatch(buildCallInstructions({ visitorBrief: brief, suggestions: [], greeting }), /<event_zones>\n|<personal_picks>\n/, "empty blocks are left out");
@@ -167,7 +187,7 @@ assert.doesNotMatch(buildCallInstructions({ visitorBrief: brief, suggestions: []
   delete process.env.WANEES_OPENAI_REALTIME_MODEL; delete process.env.WANEES_OPENAI_REALTIME_VOICE; delete process.env.WANEES_OPENAI_REALTIME_REASONING; delete process.env.WANEES_OPENAI_TRANSCRIBE_LANGUAGE;
   const config = realtimeSessionConfig("x");
   assert.equal(config.model, "gpt-realtime-2.1");
-  assert.equal(config.audio.output.voice, "cedar");
+  assert.equal(config.audio.output.voice, "marin", "the default voice is the female one");
   assert.deepEqual(config.reasoning, { effort: "low" });
   assert.equal(config.audio.input.turn_detection.type, "semantic_vad");
   assert.equal(config.audio.input.transcription.language, undefined, "caption language is auto-detected unless configured");
@@ -176,9 +196,9 @@ assert.doesNotMatch(buildCallInstructions({ visitorBrief: brief, suggestions: []
   assert.equal(realtimeReasoningEffort(), "low", "an unknown effort falls back to low");
   process.env.WANEES_OPENAI_REALTIME_REASONING = "minimal";
   assert.equal(realtimeReasoningEffort(), "minimal");
-  process.env.WANEES_OPENAI_REALTIME_VOICE = "marin";
+  process.env.WANEES_OPENAI_REALTIME_VOICE = "coral";
   process.env.WANEES_OPENAI_REALTIME_MODEL = "gpt-realtime-2";
-  assert.equal(realtimeVoice(), "marin");
+  assert.equal(realtimeVoice(), "coral", "every candidate voice is one env var away");
   assert.equal(realtimeModel(), "gpt-realtime-2", "the previous model stays one env var away");
   for (const [key, value] of [["WANEES_OPENAI_REALTIME_MODEL", saved.model], ["WANEES_OPENAI_REALTIME_VOICE", saved.voice], ["WANEES_OPENAI_REALTIME_REASONING", saved.reasoning], ["WANEES_OPENAI_TRANSCRIBE_LANGUAGE", saved.language]]) {
     if (value === undefined) delete process.env[key]; else process.env[key] = value;

@@ -53,7 +53,9 @@ export const REALTIME_TOOLS = [
 ] as const;
 
 export const REALTIME_DEFAULT_MODEL = "gpt-realtime-2.1";
-export const REALTIME_DEFAULT_VOICE = "cedar";
+export const REALTIME_DEFAULT_VOICE = "marin";
+/** Female voices to compare in the voice evaluation (docs/VOICE_EVALUATION.md); any of them is one env var away. */
+export const REALTIME_VOICE_CANDIDATES = ["marin", "coral", "shimmer", "sage"] as const;
 export const REALTIME_DEFAULT_REASONING = "low";
 export const REALTIME_DEFAULT_TRANSCRIBE_MODEL = "gpt-4o-mini-transcribe";
 const REALTIME_REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high"]);
@@ -66,7 +68,11 @@ export function realtimeModel() {
   return process.env.WANEES_OPENAI_REALTIME_MODEL?.trim() || REALTIME_DEFAULT_MODEL;
 }
 
-/** The spoken voice. ونيس is a male Saudi name, so the default is OpenAI's warm male voice `cedar`. */
+/**
+ * The spoken voice. WANEES now speaks with a natural female Saudi voice. `marin` is the starting default (one of
+ * the two newest realtime voices); it is a provisional choice until the listening test in docs/VOICE_EVALUATION.md
+ * is run on real devices. Set WANEES_OPENAI_REALTIME_VOICE to compare coral, shimmer and sage, or `cedar` for the old voice.
+ */
 export function realtimeVoice() {
   return process.env.WANEES_OPENAI_REALTIME_VOICE?.trim() || REALTIME_DEFAULT_VOICE;
 }
@@ -132,9 +138,11 @@ export function callGreeting(input: CallGreetingInput) {
   }
   if (input.hasPlan && input.nextName) return `${hello} محطتك الجاية «${input.nextName}»، تبي نمشي عليها ولا عندك شي ثاني في بالك؟`;
   if (input.returning && input.lastVisitName) return `${hello} المرة الماضية جرّبتوا «${input.lastVisitName}»، نفس الجو ولا شي جديد الليلة؟`;
-  if (input.withKids) return `${hello} وش تحبون تسوون أنت والعيال الليلة؟`;
-  // A brand-new visitor: the guide beside them, not a form. One welcome, one open question.
-  return `${hello} أنا رفيقك الليلة${input.venueName ? ` في ${input.venueName}` : ""}. نوّرت! جاي لحالك ولا مع الأهل والربع؟`;
+  if (input.withKids) return `${hello} قل لي وش ودّكم فيه أنت والعيال الليلة، وأرتّبها لكم.`;
+  // A brand-new visitor: the guide beside them, not a form. One welcome and one open invitation that
+  // lets them say everything at once (who is with them, what they like, how long), so the plan can be built
+  // from the first answer instead of a chain of questions.
+  return `${hello} أنا رفيقك الليلة${input.venueName ? ` في ${input.venueName}` : ""}. مين معك ووش ودّكم فيه الليلة؟ قلها لي بجملة وأرتّبها لك على طول.`;
 }
 
 export type RealtimeSecret = { clientSecret: string; expiresAt: number; model: string };

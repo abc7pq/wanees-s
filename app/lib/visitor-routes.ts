@@ -8,7 +8,7 @@ export type VisitorTabId = (typeof VISITOR_TABS)[number];
 const SEGMENT: Record<VisitorTabId, string> = { assistant: "", itinerary: "plan", map: "map", nearby: "nearby", me: "me" };
 const BY_SEGMENT = new Map(Object.entries(SEGMENT).map(([tab, segment]) => [segment, tab as VisitorTabId]));
 
-export const TAB_LABELS: Record<VisitorTabId, string> = { assistant: "ونيس", itinerary: "مساري", map: "الخريطة", nearby: "حولي", me: "أنا" };
+export const TAB_LABELS: Record<VisitorTabId, string> = { assistant: "الرئيسية", itinerary: "مساري", map: "الخريطة", nearby: "حولي", me: "أنا" };
 
 export type VisitorRoute = {
   slug: string;

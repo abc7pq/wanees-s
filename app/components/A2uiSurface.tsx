@@ -9,7 +9,12 @@ const KNOWN = new Set<string>(A2UI_COMPONENTS);
 
 export type A2uiActionHandler = (action: A2uiActionMessage, opener: HTMLButtonElement) => void;
 
-export function A2uiSurface({ messages, onAction, disabled = false }: { messages: readonly A2uiMessage[]; onAction: A2uiActionHandler; disabled?: boolean }) {
+/**
+ * `art` is presentation only: the app may draw a picture beside an activity or place card (the
+ * card's record id comes from the surface's own data model). The A2UI payload itself is unchanged,
+ * so other renderers (the native apps later) are not affected.
+ */
+export function A2uiSurface({ messages, onAction, disabled = false, art }: { messages: readonly A2uiMessage[]; onAction: A2uiActionHandler; disabled?: boolean; art?: (itemId: string, kind: "activity" | "place") => ReactNode }) {
   const surface = useMemo(() => processA2uiMessages(messages), [messages]);
   if (!surface || !surface.components.has("root")) return null;
 
@@ -23,8 +28,12 @@ export function A2uiSurface({ messages, onAction, disabled = false }: { messages
         return <div key={id} className="a2ui-column">{kids}</div>;
       case "Row":
         return <div key={id} className={`a2ui-row is-${component.justify ?? "start"}`}>{kids}</div>;
-      case "Card":
-        return <div key={id} className="a2ui-card">{component.child ? render(component.child, depth + 1, path) : null}</div>;
+      case "Card": {
+        const item = art ? /^(act|loc)(\d+)$/.exec(id) : null;
+        const record = item ? (surface.data.items as Array<{ id?: unknown }> | undefined)?.[Number(item[2])] : null;
+        const picture = item && typeof record?.id === "string" ? art?.(record.id, item[1] === "act" ? "activity" : "place") : null;
+        return <div key={id} className={`a2ui-card${picture ? " has-art" : ""}`}>{picture}{component.child ? render(component.child, depth + 1, path) : null}</div>;
+      }
       case "Divider":
         return <hr key={id} className="a2ui-divider" />;
       case "Text":

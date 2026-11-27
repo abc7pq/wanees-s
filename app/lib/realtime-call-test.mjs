@@ -140,4 +140,17 @@ const tick = (ms = 0) => new Promise((resolve) => setTimeout(resolve, ms));
   assert.equal(h.turns.at(-1).text, "أنا ونيس، المساعد الذكي لمنصة ونيس.");
 }
 
+// Call timings for the voice evaluation: start time, and visitor-stopped → first reply audio.
+{
+  const { createCallTimer } = await import("./realtime-call.ts");
+  let clock = 1000;
+  const timer = createCallTimer(() => clock);
+  clock = 1800; timer.opened();
+  timer.event("response.output_audio.delta"); // before any visitor turn: not a reply latency
+  clock = 5000; timer.event("input_audio_buffer.speech_stopped");
+  clock = 5640; timer.event("response.output_audio_transcript.delta");
+  clock = 5900; timer.event("response.output_audio.delta"); // same reply: counted once
+  assert.deepEqual(timer.timings(), { startMs: 800, replyMs: [640] });
+}
+
 console.log("realtime call controller tests passed");

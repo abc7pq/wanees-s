@@ -11,7 +11,9 @@ type State = { sessionId: string; itineraryId?: string; itinerary: Itinerary | n
 type Msg = { role: "agent"; text: string };
 type AssistantSource = { id: string; name: string; zone?: string; zoneName?: string; durationMin?: number; priceSar?: number; eligibilityKnown?: boolean; sourceRef: string; kind?: "activity" | "location" | "zone"; x?: number; y?: number; type?: string; description?: string; reasons?: string[] };
 type ChatDirections = { targetId: string; targetName: string; totalWalkMin: number; avoided: string[]; crowdedOnRoute: string[] };
-type ChatMsg = { role: "agent" | "user" | "typing"; text: string; options?: AssistantSource[]; ui?: A2uiMessage[] | null; handoff?: boolean; directions?: ChatDirections | null };
+type ChatMsg = { role: "agent" | "user" | "typing"; text: string; options?: AssistantSource[]; ui?: A2uiMessage[] | null; handoff?: boolean; directions?: ChatDirections | null; plan?: Stop[] | null };
+// What the call screen shows right now. It follows the engine's reply for the turn (redesign §4).
+type CallStage = { kind: "base" } | { kind: "cards"; items: AssistantSource[] } | { kind: "plan"; saved: boolean } | { kind: "nav"; targetId: string; targetName: string } | { kind: "proposal" };
 type Alert = { stop_act: string; stop_name: string; zone: string; level: number; text: string; suggestion: { id: string; name: string } };
 type PlanDiff = { removed?: { name: string }[]; added?: { name: string; start?: number }[]; moved?: { name: string; from?: { start: number }; to?: { start: number } }[] };
 type ReplanProposal = { id: string; kind?: "assistant" | "live"; candidate: Itinerary; baseItineraryId?: string; baseLiveRevision?: string; proposalExpiresAt?: string | null; diff: PlanDiff; reason?: string; announcedAt?: string; incentive?: IncentiveDisplay | null };
@@ -20,7 +22,7 @@ type VisitorOffer = { incentive: IncentiveDisplay; claimed: boolean };
 type EventCatalog = {
   site: { name: string };
   zones: { id: string; name: string }[];
-  activities: { id: string; name: string; zone?: string; interests: string[]; moods: string[] }[];
+  activities: { id: string; name: string; zone?: string; type?: string; image?: string | null; interests: string[]; moods: string[] }[];
   locations?: { id: string; label: string; status: string; type: string; description?: string; zone?: string; aliases?: string[] }[];
   routeGraph?: { nodes: GpsRouteNode[] };
 };
@@ -52,6 +54,8 @@ import type { RealtimeCallHandle } from "@/lib/realtime-call";
 import type { A2uiActionMessage, A2uiMessage } from "@/lib/a2ui";
 import { surfaceProposalId } from "@/lib/a2ui-proposal";
 import { BrandLogo, Mascot } from "@/components/Brand";
+import { ActivityArt } from "@/components/ActivityArt";
+import { CallScreen, type CallCard, type CallPlanStop, type CallStageView } from "@/components/CallScreen";
 import { VisitorRegistration } from "@/components/VisitorRegistration";
 import { forParty, stopPriceLabel } from "@/lib/price-label";
 import { AR_MINUTE, arCount, minutesCount } from "@/lib/ar-count";
@@ -171,6 +175,12 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
     coffee: <path d="M17 8h1a4 4 0 0 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V8ZM6 2v2m4-2v2m4-2v2"/>,
     leaf: <><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10Z"/><path d="M2 21c0-3 1.9-5.4 5.1-6"/></>,
     timer: <><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4"/></>,
+    home: <><path d="m3 11 9-7.500 9 7.500"/><path d="M5.500 9.500V20h13V9.500M10 20v-5.500h4V20"/></>,
+    plan: <><rect x="3.500" y="5" width="17" height="15.500" rx="3"/><path d="M8 3v4m8-4v4M3.500 10h17m-12 4.500 2 2 4-4"/></>,
+    pin: <><path d="M12 21s7-6.200 7-11.500a7 7 0 0 0-14 0C5 14.800 12 21 12 21Z"/><circle cx="12" cy="9.500" r="2.500"/></>,
+    chevron: <path d="m14.500 6-6 6 6 6"/>,
+    pencil: <><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.500 6.500 4 4"/></>,
+    plus: <path d="M12 5v14M5 12h14"/>,
   };
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name] ?? paths.compass}</svg>;
 }
@@ -339,7 +349,22 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
   const callBridgeRef = useRef<{ ask: (request: string) => Promise<unknown>; decide: (decision: "accept" | "keep_current") => Promise<unknown>; feedback: (args: { activity: string; rating: number }) => Promise<unknown> } | null>(null);
   const callOptionsRef = useRef<AssistantSource[] | undefined>(undefined);
   const callUiRef = useRef<A2uiMessage[] | null>(null);
+  // The plan the engine saved during the current call turn, so the chat log shows it after the call.
+  const callPlanRef = useRef<Stop[] | null>(null);
   const chatInputRef = useRef<HTMLInputElement | null>(null);
+  // Redesign: «ابدأ مع ونيس» is the home of the conversation, with two ways in (chat, call).
+  const [welcomeMode, setWelcomeMode] = useState<"hub" | "chat">("hub");
+  const [homeView, setHomeView] = useState<"hub" | "chat">("hub");
+  const [chatListening, setChatListening] = useState(false);
+  // The call screen: what it shows, whether the engine is working, and the saved-plan confirmation.
+  const [callStage, setCallStage] = useState<CallStage>({ kind: "base" });
+  const [callWorking, setCallWorking] = useState(false);
+  const [callSavedPulse, setCallSavedPulse] = useState(0);
+  const [callRoute, setCallRoute] = useState<DirectionsPayload | null>(null);
+  const [callNavBusy, setCallNavBusy] = useState(false);
+  const [speakerMuted, setSpeakerMuted] = useState(false);
+  const speakerMutedRef = useRef(false);
+  const callNavRequestRef = useRef(0);
   const initialTab: VisitorTabId = entryRoute?.screen === "tab" ? entryRoute.tab : entryRoute ? "map" : "itinerary";
   const [activeTab, setActiveTab] = useState<VisitorTabId>(() => initialTab);
   const [mapVisited, setMapVisited] = useState(false);
@@ -641,11 +666,12 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
       setRememberAsked(Boolean(session.data.remembered) || Boolean(session.data.registered) || isPitch);
       setMessages(text ? [
         { role: "user", text },
-        { role: "agent", text: reply.message, ui: Array.isArray(reply.ui) ? reply.ui : null, directions: reply.directions ?? null },
-        ...(reply.itinerary ? [] : [{ role: "agent" as const, text: "وجهزت لك جولة مبدئية بافتراضات آمنة، وكل ما قلت لي أكثر عدّلتها." }]),
+        { role: "agent", text: reply.message, ui: Array.isArray(reply.ui) ? reply.ui : null, directions: reply.directions ?? null, plan: reply.itinerary?.stops?.length ? reply.itinerary.stops : null },
+        ...(reply.itinerary ? [] : [{ role: "agent" as const, text: "وجهزت لك جولة مبدئية بافتراضات آمنة، وكل ما قلت لي أكثر عدّلتها.", plan: itinerary?.stops?.length ? itinerary.stops : null }]),
       ] : [{ role: "agent", text: reply.message }]);
       setOpeningText("");
       setPhase("plan");
+      if (text) setHomeView("chat");
       if (options.call) openCallAfterStart();
       else selectTab("itinerary");
       if (itinerary) {
@@ -944,12 +970,14 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
     }
   };
 
-  const showDirectionsOnMap = (result: DirectionsPayload, options: { fix?: GpsFix | null; simulate?: boolean } = {}) => {
+  // `inCall`: the route and the live position are drawn inside the call screen, so the map tab and the
+  // full-screen compass stay closed and the call keeps the screen.
+  const showDirectionsOnMap = (result: DirectionsPayload, options: { fix?: GpsFix | null; simulate?: boolean; inCall?: boolean } = {}) => {
     setMapPath(result.pathNodes);
     setMapFocus(null);
     const fix = options.fix !== undefined ? options.fix : dirGpsFix;
     closeDirections();
-    revealMap();
+    if (!options.inCall) revealMap();
     const points = result.pathNodes;
     const live = Boolean(fix && gpsAvailable && !result.demoRoute);
     if ((!live && !options.simulate) || points.length < 1) return;
@@ -986,7 +1014,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
       });
       return arrived;
     };
-    setGuideOpen(true);
+    setGuideOpen(!options.inCall);
     if (live && fix) {
       updateGuide(fix.point);
       // إعادة الحساب تلقائيًا إذا ابتعد الزائر عن المسار (قراءتان متتاليتان > 35م، ومرة كل 20ث كحد أقصى)
@@ -1061,17 +1089,70 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
     }, 600);
   };
 
+  // Navigation inside the call (redesign §5): the walking route to `targetId` on the venue map, from
+  // the visitor's GPS position when the venue is calibrated, else from where the plan says they are.
+  const startCallNav = async (targetId?: string, targetName?: string) => {
+    const upcoming = state?.itinerary?.stops.find((stop) => stop.end > state.now);
+    const target = targetId || upcoming?.act_id || "";
+    if (!target) return;
+    const name = targetName
+      || state?.itinerary?.stops.find((stop) => stop.act_id === target)?.name
+      || eventCatalog?.activities.find((activity) => activity.id === target)?.name
+      || eventCatalog?.zones.find((zone) => zone.id === target)?.name
+      || eventCatalog?.locations?.find((place) => place.id === target)?.label || "";
+    setCallStage({ kind: "nav", targetId: target, targetName: name });
+    setCallRoute(null);
+    setMapPath(null);
+    setCallNavBusy(true);
+    const request = ++callNavRequestRef.current;
+    const current = () => callNavRequestRef.current === request;
+    try {
+      // The route from where the plan says the visitor is appears at once; a GPS fix, when the venue
+      // is calibrated and the visitor allows it, then replaces it with live guidance from their position.
+      const quick = await fetchDirections(currentPosition()?.nodeId ?? visitOrigin(), target);
+      if (!current()) return;
+      if (quick) { setCallRoute(quick.result); setMapPath(quick.result.pathNodes); setMapFocus(null); }
+      setCallNavBusy(false);
+      if (!gpsAvailable) return;
+      const live = await fetchDirections("", target, true);
+      if (!current()) return;
+      if (live?.fix && !live.result.demoRoute && live.result.pathNodes.length) {
+        setCallRoute(live.result);
+        showDirectionsOnMap(live.result, { fix: live.fix, inCall: true });
+      } else if (quick) { setCallRoute(quick.result); setMapPath(quick.result.pathNodes); }
+    } finally {
+      if (current()) setCallNavBusy(false);
+    }
+  };
+
+  // Each engine reply during a call decides what the call screen shows next (redesign §4).
+  const noteCallReply = (data: { intent?: string; itinerary?: Itinerary | null; proposal?: { id?: string } | null; directions?: ChatDirections | null; sources?: AssistantSource[] }) => {
+    if (data.proposal?.id) { setCallStage({ kind: "proposal" }); return; }
+    if (data.itinerary) { setCallStage({ kind: "plan", saved: true }); setCallSavedPulse((count) => count + 1); return; }
+    const cards = ["search", "location", "alternatives", "schedule"].includes(data.intent ?? "") && Array.isArray(data.sources)
+      ? data.sources.filter((source) => source?.id && source?.name).slice(0, 3) : [];
+    // Several options («وش فيه عروض؟») are shown side by side even when the reply also names the nearest
+    // one; a single destination («دلني على…») goes straight to the map and the route.
+    if (cards.length > 1 && data.intent !== "location") { setCallStage({ kind: "cards", items: cards }); return; }
+    if (data.directions?.targetId && !isPitch) { void startCallNav(data.directions.targetId, data.directions.targetName); return; }
+    if (cards.length) { setCallStage({ kind: "cards", items: cards }); return; }
+    if ((data.intent === "status" || data.intent === "explain") && itineraryRef.current) { setCallStage({ kind: "plan", saved: false }); return; }
+    setCallStage({ kind: "base" });
+  };
+
   const sendChat = async (text: string, fromCall = false, a2uiAction?: A2uiActionMessage): Promise<VoiceReply | null> => {
     if (!text.trim() || !state) return null;
     const sessionId = sessionRef.current;
     if (/ضعت|ضايعت|ضايع|وين أنا/.test(text)) {
-      if (fromCall) closeVoice();
-      if (isPitch) setShowPlaces(true);
+      if (isPitch) { if (fromCall) closeVoice(); setShowPlaces(true); }
+      else if (fromCall) void startCallNav();
       else startAirGuide();
       return null;
     }
     // One reply at a time: a second send while waiting would interleave typing bubbles and replies.
     if (chatInFlightRef.current) return null;
+    if (!fromCall) setHomeView("chat");
+    else setCallWorking(true);
     chatInFlightRef.current = true;
     setChatPending(true);
     // Only text typed in the composer is cleared (and restored on failure); chips keep the visitor's draft.
@@ -1102,8 +1183,9 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
         const options = (data.intent === "search" || data.intent === "location") && Array.isArray(data.sources)
           ? data.sources.filter((source: AssistantSource) => source?.id && source?.name).slice(0, 5)
           : undefined;
-        setMessages((m) => [...m.filter((x) => x.role !== "typing"), { role: "agent", text: data.message, options, ui: Array.isArray(data.ui) ? data.ui : null, handoff: Boolean(data.handoff), directions: data.directions ?? null }]);
+        setMessages((m) => [...m.filter((x) => x.role !== "typing"), { role: "agent", text: data.message, options, ui: Array.isArray(data.ui) ? data.ui : null, handoff: Boolean(data.handoff), directions: data.directions ?? null, plan: data.itinerary?.stops?.length ? data.itinerary.stops : null }]);
         if (data.itinerary) trackDurable(eventSlug, "replan_applied");
+        if (fromCall) noteCallReply(data);
         return { text: data.message, needsReview: Boolean(data.proposal) };
       }
       const st = await api("chat", { sessionId, text });
@@ -1121,14 +1203,24 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
     } finally {
       chatInFlightRef.current = false;
       setChatPending(false);
+      if (fromCall) setCallWorking(false);
     }
   };
 
   const closeVoice = useCallback(() => {
+    callNavRequestRef.current += 1;
+    setCallStage({ kind: "base" });
+    setCallWorking(false);
+    setCallRoute(null);
+    speakerMutedRef.current = false;
+    setSpeakerMuted(false);
     voiceCallRef.current?.stop();
     voiceCallRef.current = null;
     const live = realtimeCallRef.current;
     realtimeCallRef.current = null;
+    // Numbers only (start time, reply latencies), for the voice evaluation in docs/VOICE_EVALUATION.md.
+    const timings = live?.timings();
+    if (timings?.startMs != null) console.info("wanees.call.timings", JSON.stringify(timings));
     live?.stop();
     setVoiceMode(null);
     setVoiceMuted(false);
@@ -1160,7 +1252,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
       const plan = (await durableRequest(`/api/v1/events/${encodeURIComponent(eventSlug)}/itinerary`, { method: "POST", body: JSON.stringify({ generatedReason: "voice_call" }) })).data;
       adoptPlanFromReply(plan);
       setOpeningReply("");
-      setMessages((m) => [...m, { role: "agent", text: "جهزت لك جولة مبدئية بافتراضات آمنة، وكل ما قلت لي أكثر عدّلتها." }]);
+      setMessages((m) => [...m, { role: "agent", text: "جهزت لك جولة مبدئية بافتراضات آمنة، وكل ما قلت لي أكثر عدّلتها.", plan: plan.itinerary?.stops?.length ? plan.itinerary.stops : null }]);
     } catch {
       // The visitor can still ask for a plan in the chat.
     } finally {
@@ -1179,16 +1271,18 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
   const askEngineForCall = async (request: string) => {
     if (/ضعت|ضايعت|ضايع|وين أنا/.test(request)) {
       if (isPitch) setShowPlaces(true);
-      else startAirGuide();
-      return { message: "فتحت للزائر دليل الموقع على الشاشة.", intent: "location" };
+      else void startCallNav();
+      return { message: "عرضت للزائر الخريطة والطريق إلى محطته الجاية على شاشة المكالمة.", intent: "location" };
     }
     trackDurable(eventSlug, "assistant_message");
+    setCallWorking(true);
     const response = await durableRequest(`/api/v1/events/${encodeURIComponent(eventSlug)}/assistant`, {
       method: "POST",
       // The device position (a walkway node) travels with every engine request in the call too (v7).
       body: JSON.stringify({ message: request, channel: "call", ...(currentPosition() ? { position: currentPosition() } : {}) }),
-    });
+    }).finally(() => setCallWorking(false));
     const data = response.data;
+    noteCallReply(data);
     if (data.proposal?.id && data.proposal?.candidate) {
       setReplanFeedback("");
       setReplanProposal({ ...data.proposal, kind: "assistant" });
@@ -1196,6 +1290,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
     }
     adoptPlanFromReply(data);
     callUiRef.current = Array.isArray(data.ui) ? data.ui : null;
+    if (data.itinerary?.stops?.length) callPlanRef.current = data.itinerary.stops;
     callOptionsRef.current = (data.intent === "search" || data.intent === "location") && Array.isArray(data.sources)
       ? data.sources.filter((source: AssistantSource) => source?.id && source?.name).slice(0, 5)
       : undefined;
@@ -1253,8 +1348,9 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           onTurn: (turn) => {
             const options = turn.role === "assistant" ? callOptionsRef.current : undefined;
             const ui = turn.role === "assistant" ? callUiRef.current : null;
-            if (turn.role === "assistant") { callOptionsRef.current = undefined; callUiRef.current = null; }
-            setMessages((m) => [...m, turn.role === "visitor" ? { role: "user", text: turn.text } : { role: "agent", text: turn.text, options, ui }]);
+            const plan = turn.role === "assistant" ? callPlanRef.current : null;
+            if (turn.role === "assistant") { callOptionsRef.current = undefined; callUiRef.current = null; callPlanRef.current = null; }
+            setMessages((m) => [...m, turn.role === "visitor" ? { role: "user", text: turn.text } : { role: "agent", text: turn.text, options, ui, plan }]);
           },
           onEnd: (reason) => {
             if (!handle || realtimeCallRef.current !== handle) return;
@@ -1317,6 +1413,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
         const utterance = new SpeechSynthesisUtterance(text.replace(/[«»]/g, ""));
         utterance.lang = "ar-SA";
         utterance.rate = 0.96;
+        utterance.volume = speakerMutedRef.current ? 0 : 1;
         const clearHandlers = () => { utterance.onend = null; utterance.onerror = null; };
         utterance.onend = () => { clearHandlers(); done(); };
         utterance.onerror = () => { clearHandlers(); failed(); };
@@ -1326,7 +1423,9 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
       onState: setVoiceState,
       onHeard: setVoiceTranscript,
       onReply: setVoiceReply,
-      onReview: closeVoice,
+      // A change that needs the visitor's yes stays inside the call: the proposal is on the call screen
+      // with its two buttons, and the call resumes with one tap after they answer.
+      onReview: () => setVoiceState("paused"),
     });
     voiceCallRef.current = call;
     setVoiceMode("browser");
@@ -1393,6 +1492,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
         setState((previous) => previous ? applyReplanOutcome(previous, outcome) : previous);
         trackDurable(eventSlug, "replan_applied");
         setReplanFeedback("تم تطبيق الاقتراح وتحديث مسارك.");
+        if (voiceOpen) { setCallStage({ kind: "plan", saved: true }); setCallSavedPulse((count) => count + 1); }
         if (replanProposal.incentive || visitorOffers) void refreshOffers();
         setMessages((messages) => [...messages, { role: "agent", text: "تم تطبيق الاقتراح وتحديث مسارك." }]);
       } else {
@@ -1455,6 +1555,53 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           : "تعذر حفظ القرار؛ اطلب منه يحاول من الشاشة",
       };
     },
+  };
+
+  // A proposal that arrives during a call (the visitor asked for a change, or the operator published a
+  // delay) is shown inside the call; once it is answered the call returns to the plan.
+  const pendingProposalId = replanProposal?.id ?? null;
+  useEffect(() => {
+    if (!voiceOpen) return;
+    if (pendingProposalId) setCallStage({ kind: "proposal" });
+    else setCallStage((stage) => stage.kind === "proposal" ? (itineraryRef.current ? { kind: "plan", saved: false } : { kind: "base" }) : stage);
+  }, [pendingProposalId, voiceOpen]);
+
+  const openCall = (opener: HTMLButtonElement | null, autoStart = false) => {
+    voiceOpener.current = opener;
+    setVoiceTranscript(""); setVoiceReply(""); setVoiceError("");
+    setCallStage({ kind: "base" });
+    setVoiceOpen(true);
+    // The tap that opened the call is the visitor's own gesture, so the microphone can start with it.
+    if (autoStart) void startVoice();
+  };
+  // Leaving the call for the chat keeps everything: the turns are already in the chat log, the plan is
+  // the same plan, and the server keeps the conversation context for the next message.
+  const callToChat = () => {
+    closeVoice();
+    setActiveTab("assistant");
+    setHomeView("chat");
+    // Chose typing before the call built anything: the safe starter plan, as the text path promises.
+    void ensureStarterPlan();
+    requestAnimationFrame(() => chatInputRef.current?.focus());
+  };
+  // The chat's microphone dictates into the message box; the visitor still reads it and sends it.
+  const dictateChat = () => {
+    const browserWindow = window as typeof window & { SpeechRecognition?: new () => VoiceRecognition; webkitSpeechRecognition?: new () => VoiceRecognition };
+    const Recognition = browserWindow.SpeechRecognition ?? browserWindow.webkitSpeechRecognition;
+    if (!Recognition) { showToast("المتصفح ما يدعم الإدخال الصوتي. اكتب لي، أو جرّب المكالمة."); return; }
+    if (chatListening) return;
+    const recognition = new Recognition();
+    recognition.lang = "ar-SA";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.onresult = (event) => {
+      const heard = Array.from(event.results).map((result) => result[0].transcript).join(" ").trim();
+      if (heard) setChatInput((current) => current.trim() ? `${current.trim()} ${heard}` : heard);
+    };
+    recognition.onerror = () => setChatListening(false);
+    recognition.onend = () => { setChatListening(false); chatInputRef.current?.focus(); };
+    setChatListening(true);
+    try { recognition.start(); } catch { setChatListening(false); }
   };
 
   // Wanees speaks first: deterministic nudges (time to walk, show starting, visit ending), each shown once.
@@ -1769,6 +1916,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
     setMapFocus(id ?? null);
     revealMap();
   };
+  const navIcon = (tab: VisitorTabId) => <Icon name={tab === "itinerary" ? "plan" : tab === "map" ? "map" : tab === "nearby" ? "pin" : tab === "me" ? "user" : "home"} size={22} />;
   const placeTerm = placeQuery.trim();
   const places = (eventCatalog?.locations ?? [])
     .filter((place) => place.status === "open" && /SERVICE|ENTRANCE|LANDMARK/i.test(place.type))
@@ -1804,26 +1952,43 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
     </dialog>
   );
 
-  if (phase === "welcome")
+  if (phase === "welcome") {
+    const mustRegister = registrationRequired && !guest?.exists;
+    const canStart = eventLoadState === "ready" && visitorCheck === "done" && !isBuildingPlan;
     return (
-      <main className="container visitor-flow welcome-flow">
+      <main className="container visitor-flow welcome-flow" data-mode={welcomeMode}>
         <header className="app-topbar">
-          <a className="brand" href="/" aria-label="ونيس — الرئيسية"><BrandLogo height={34} label="ونيس" priority /></a>
+          {welcomeMode === "chat"
+            ? <button type="button" className="btn-icon" aria-label="رجوع" disabled={isBuildingPlan} onClick={() => setWelcomeMode("hub")}><Icon name="chevron" size={20}/></button>
+            : <span />}
+          <a className="brand" href="/" aria-label="ونيس — الرئيسية"><BrandLogo height={welcomeMode === "chat" ? 34 : 30} label="ونيس" priority /></a>
         </header>
-        <div className="hero">
-          {eventName && <div className="hero-badge">{eventName}</div>}
-          <h1 className="logo-word"><BrandLogo height={132} wordmark label="ونيس" priority /></h1>
-          <p className="tagline"><b>هلا والله! قل لي وش بالك الليلة</b><br />مين معك، وش تحبون، وكم عندكم وقت. أفهمك من كلامك وأرتّب لك جولتك على طول.</p>
-          {isFixture && <p className="visitor-note">{isPitch ? "عرض تجريبي · الأسعار والمواعيد للشرح" : "موسم 2026-27"}</p>}
-          {isBuildingPlan && (
-            <div className="chat-preview" aria-live="polite">
-              {openingText.trim() && <p className="chat-bubble mine"><bdi>{openingText.trim()}</bdi></p>}
-              <p className="chat-bubble typing" role="status"><span className="sr-only">ونيس يرتّب جولتك…</span><i /><i /><i /></p>
+
+        {welcomeMode === "hub" ? (
+          <section className="start-hero" aria-labelledby="start-title">
+            <div className="start-logo"><BrandLogo height={84} wordmark label="ونيس" priority /></div>
+            {eventName && <div className="hero-badge">{eventName}</div>}
+            <h1 id="start-title">ابدأ مع ونيس</h1>
+            <p className="start-tagline">مرشدك الذكي في الفعالية: قل له وش بالك، ويرتّب لك ليلتك ويدلّك عليها.</p>
+            <Mascot mood="wave" height={170} className="welcome-mascot start-mascot" priority />
+          </section>
+        ) : (
+          <section className="start-chat" aria-label="شات مع ونيس">
+            <div className="chat-row">
+              <span className="chat-avatar" aria-hidden="true"><img src="/brand/mascot-head.webp" alt="" width={36} height={36} /></span>
+              <p className="bubble agent tagline"><b>هلا والله! قل لي وش بالك الليلة</b>مين معك، وش تحبون، وكم عندكم وقت. أفهمك من كلامك وأرتّب لك جولتك على طول.</p>
             </div>
-          )}
-        </div>
+            {isFixture && <p className="visitor-note">{isPitch ? "عرض تجريبي · الأسعار والمواعيد للشرح" : "موسم 2026-27"}</p>}
+            {isBuildingPlan && (
+              <div className="chat-preview" aria-live="polite">
+                {openingText.trim() && <p className="chat-bubble mine"><bdi>{openingText.trim()}</bdi></p>}
+                <p className="chat-bubble typing" role="status"><span className="sr-only">ونيس يرتّب جولتك…</span><i /><i /><i /></p>
+              </div>
+            )}
+          </section>
+        )}
+
         <div className="welcome-actions">
-          <Mascot mood="wave" height={150} className="welcome-mascot" priority />
           {eventLoadError && (
             <div className="welcome-recovery">
               {eventMissing ? (
@@ -1852,14 +2017,14 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                 <button type="button" className="cta" disabled={isBuildingPlan || visitorCheck !== "done"} onClick={() => void startFromConversation("", returningGuest.preferences ?? {})}>
                   {isBuildingPlan ? "أجهز جولتك…" : "إيه، نفس الجو"}
                 </button>
-                <button type="button" className="cta secondary" disabled={isBuildingPlan} onClick={() => { setReturningGuest(null); document.getElementById("opening-message")?.focus(); }}>لا، شي جديد</button>
+                <button type="button" className="cta secondary" disabled={isBuildingPlan} onClick={() => { setReturningGuest(null); setWelcomeMode("chat"); requestAnimationFrame(() => document.getElementById("opening-message")?.focus()); }}>لا، شي جديد</button>
               </div>
             </div>
           )}
-          {resumeAfterRegistration && registrationRequired && !guest?.exists && (
+          {resumeAfterRegistration && mustRegister && (
             <p className="guide" role="status">سجّل اسمك ورقم جوالك عشان نكمل. كلامك محفوظ وأبني جولتك أول ما تخلص.</p>
           )}
-          {eventLoadState === "ready" && visitorCheck === "done" && registrationRequired && !guest?.exists && (
+          {eventLoadState === "ready" && visitorCheck === "done" && mustRegister && (
             <VisitorRegistration
               eventSlug={eventSlug}
               onRegistered={(visitor) => {
@@ -1868,15 +2033,34 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                 setResumeAfterRegistration(null);
                 if (resume) {
                   // The visitor already told us what they want: build the plan now instead of asking again
-                  // (and a visitor who tapped «اتصل بونيس» still gets the call).
+                  // (and a visitor who tapped «مكالمة مع ونيس» still gets the call).
                   void startFromConversation(resume.text, resume.saved, { call: resume.call });
                   return;
                 }
+                setWelcomeMode("chat");
                 focusStartRef.current = true;
               }}
             />
           )}
-          {eventLoadState !== "error" && !(registrationRequired && !guest?.exists) && (
+
+          {welcomeMode === "hub" && eventLoadState !== "error" && !mustRegister && (
+            <div className="start-choices" role="group" aria-label="اختر طريقة تفاعلك مع ونيس">
+              <button type="button" className="start-choice is-chat" disabled={eventLoadState !== "ready"} onClick={() => { setWelcomeMode("chat"); requestAnimationFrame(() => document.getElementById("opening-message")?.focus()); }}>
+                <span className="start-choice-icon" aria-hidden="true"><Icon name="chat" size={24}/></span>
+                <span className="start-choice-text"><b>شات مع ونيس</b><small>اكتب، اسأل، وخطّط لتجربتك</small></span>
+                <span className="start-choice-go" aria-hidden="true"><Icon name="chevron" size={18}/></span>
+              </button>
+              {!isPitch && (
+                <button type="button" className="start-choice is-call" disabled={!canStart} onClick={() => void startFromConversation(openingText, null, { call: true })}>
+                  <span className="start-choice-icon" aria-hidden="true"><Icon name="phone" size={24}/></span>
+                  <span className="start-choice-text"><b>مكالمة مع ونيس</b><small>{isBuildingPlan ? "أجهّز المكالمة…" : "تكلّم بصوتك وابدأ التخطيط مباشرة"}</small></span>
+                  <span className="start-choice-go" aria-hidden="true"><Icon name="chevron" size={18}/></span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {welcomeMode === "chat" && eventLoadState !== "error" && !mustRegister && (
             <form className="opening-composer" aria-label="ابدأ الكلام مع ونيس" onSubmit={(event) => { event.preventDefault(); void startFromConversation(openingText); }}>
               <div className="opening-suggestions">
                 {(startGates.length > 0 || startZones.length > 0) && <>
@@ -1907,15 +2091,15 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                   onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void startFromConversation(openingText); } }} />
                 <div className="opening-actions">
                   <button type="button" className="btn-icon opening-mic" aria-label={openingListening ? "أسمعك…" : "تكلّم بدل الكتابة"} aria-pressed={openingListening} disabled={eventLoadState !== "ready" || isBuildingPlan} onClick={listenForOpening}><Icon name="mic" size={20}/></button>
-                  <button ref={startButtonRef} type="submit" className="cta opening-send" disabled={eventLoadState !== "ready" || visitorCheck !== "done" || isBuildingPlan || !openingText.trim()}>
+                  <button ref={startButtonRef} type="submit" className="cta opening-send" disabled={!canStart || !openingText.trim()}>
                     {eventLoadState === "loading" ? "جارٍ تحميل الفعالية…" : visitorCheck !== "done" ? "لحظة…" : isBuildingPlan ? "أجهز جولتك…" : "يلا"} <Icon name="send" size={18}/>
                   </button>
                 </div>
               </div>
-              {openingError && <p className="guide" role="alert">{openingError}</p>}
+              {!isPitch && <button className="quiet-action call-action" type="button" disabled={!canStart} onClick={() => void startFromConversation(openingText, null, { call: true })}><Icon name="phone" size={18}/> أو كمّل بمكالمة مع ونيس</button>}
             </form>
           )}
-          {eventLoadState !== "error" && !isPitch && !(registrationRequired && !guest?.exists) && <button className="quiet-action call-action" type="button" disabled={eventLoadState !== "ready" || visitorCheck !== "done" || isBuildingPlan} onClick={() => void startFromConversation(openingText, null, { call: true })}><Icon name="phone" size={18}/> اتصل بونيس وكلّمه بصوتك</button>}
+          {openingError && <p className="guide" role="alert">{openingError}</p>}
           {eventLoadState !== "error" && <button className="quiet-action" type="button" disabled={eventLoadState !== "ready"} onClick={() => setShowPlaces(true)}><Icon name="map" size={18}/> اعثر على مكان: حمام، بوابة، إسعاف</button>}
           {visitResetError && <p role="alert">{visitResetError}</p>}
           {guest?.exists && guest.preferences && (
@@ -1943,8 +2127,20 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           </VisitorDialog>
         )}
         {placesDialog}
+        {/* The same bar as the rest of the app. Before a visit starts only the home and the place finder
+            have something to show; the other tabs say what unlocks them. */}
+        <BottomNav tabs={VISITOR_TABS} active="assistant"
+          onSelect={(tab) => {
+            if (tab === "assistant") { setWelcomeMode("hub"); return; }
+            if (tab === "map" && eventLoadState === "ready") { setShowPlaces(true); return; }
+            showToast(tab === "itinerary" ? "مسارك يجهز أول ما تبدأ مع ونيس." : tab === "nearby" ? "«حولي» يشتغل أول ما تبدأ زيارتك مع ونيس." : tab === "map" ? "الخريطة تجهز بعد لحظات." : "إعداداتك تظهر أول ما تبدأ زيارتك مع ونيس.");
+          }}
+          hidden={welcomeMode === "chat"}
+          icon={navIcon} />
+        <ToastHost toasts={toasts} dismiss={dismissToast} />
       </main>
     );
+  }
 
   const it = state?.itinerary;
   const now = state?.now ?? 0;
@@ -1973,6 +2169,55 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
   const lastStop = it?.stops.at(-1);
   const visitOver = closedForNight || (!closedPreview && Boolean(lastStop && lastStop.end <= now));
   const proposalVisible = !voiceOpen && replanProposal && replanProposal.id !== collapsedProposalId && !dirSheet && !showWhy && !alert && !confirmNewVisit;
+
+  const activityKind = (id: string) => eventCatalog?.activities.find((activity) => activity.id === id)?.type ?? null;
+  const activityImage = (id: string) => eventCatalog?.activities.find((activity) => activity.id === id)?.image ?? null;
+  const lastPlanMessage = messages.reduce((last, message, index) => (message.plan?.length ? index : last), -1);
+  // The call screen's view for this render, built from the same state the other screens read.
+  const callStops: CallPlanStop[] = (it?.stops ?? []).map((stop, index) => ({
+    id: `${stop.act_id}-${index}`, name: stop.name, kind: activityKind(stop.act_id), time: fmt(stop.start), walkMin: stop.walk_min,
+    state: stop.end <= now ? "past" : !closedPreview && stop.start <= now ? "current" : stop === (closedPreview ? firstStop : next) ? "next" : "later",
+  }));
+  const callView: CallStageView = (() => {
+    if (callStage.kind === "proposal" && replanProposal) {
+      return {
+        kind: "proposal", busy: replanBusy,
+        reason: replanProposal.kind === "assistant" ? "هذا التعديل اللي طلبته." : replanProposal.reason || "تغيّر برنامج الفعالية.",
+        changes: [
+          ...(replanProposal.diff.removed ?? []).map((item) => `يُزال · ${item.name}`),
+          ...(replanProposal.diff.added ?? []).map((item) => `يُضاف · ${item.name}${item.start != null ? ` · ${fmt(item.start)}` : ""}`),
+          ...(replanProposal.diff.moved ?? []).map((item) => `${item.name}${item.from && item.to ? ` · من ${fmt(item.from.start)} إلى ${fmt(item.to.start)}` : " · تغيّر موعده"}`),
+        ],
+      };
+    }
+    if (callStage.kind === "cards") {
+      const cards: CallCard[] = callStage.items.map((option) => {
+        const isActivity = option.kind !== "zone" && option.kind !== "location";
+        const inPlan = isActivity && Boolean(it?.stops.some((stop) => stop.act_id === option.id));
+        return {
+          id: option.id, name: option.name, image: activityImage(option.id),
+          kind: option.kind === "zone" ? "zone" : option.kind === "location" ? "place" : activityKind(option.id),
+          meta: isActivity
+            ? [option.priceSar == null ? "السعر غير مؤكد" : option.priceSar ? `${option.priceSar} ريال تقريبًا` : "مجانًا", ...(option.durationMin ? [`${option.durationMin} د`] : []), ...(option.zoneName ? [option.zoneName] : [])]
+            : [option.zoneName ?? (option.kind === "zone" ? "منطقة داخل الفعالية" : "داخل الموقع")],
+          inPlan, canAdd: isActivity && !inPlan && option.priceSar != null && option.eligibilityKnown !== false,
+        };
+      });
+      return { kind: "cards", cards };
+    }
+    if (callStage.kind === "nav") {
+      return {
+        kind: "nav", targetName: airGuide?.destName ?? callRoute?.target.name ?? callStage.targetName,
+        walkMin: callRoute?.totalWalkMin ?? null, remainingM: airGuide ? airGuide.remainingM : null,
+        turnIcon: airGuide?.nextIcon ?? null, arrived: Boolean(airGuide?.arrived), busy: callNavBusy,
+        canSimulate: Boolean(callRoute && callRoute.pathNodes.length > 1 && !airGuide && map2dEnabled), stops: callStops,
+      };
+    }
+    if (callStage.kind === "plan" && it?.stops.length) {
+      return { kind: "plan", stops: callStops, saved: callStage.saved, totalLabel: partyCount > 1 ? `${it.total_cost * partyCount} ريال ${forParty(partyCount)}` : `${it.total_cost} ريال للأنشطة` };
+    }
+    return { kind: "base" };
+  })();
 
   return (
     <main className="container visitor-plan" data-wide={wideLayout}>
@@ -2042,7 +2287,7 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
         <BottomNav tabs={wideLayout ? VISITOR_TABS.filter((tab) => tab !== "itinerary") : VISITOR_TABS} active={selectedTab} onSelect={selectTab}
           hidden={voiceOpen || Boolean(airGuide && guideOpen)}
           badges={{ itinerary: replanProposal ? "1" : null }}
-          icon={(tab) => <Icon name={tab === "itinerary" ? "clock" : tab === "map" ? "compass" : tab === "nearby" ? "landmark" : tab === "me" ? "user" : "chat"} />} />
+          icon={navIcon} />
         <section id="visitor-panel-itinerary" className="visitor-itinerary"
           role="region" aria-labelledby={wideLayout ? "visitor-itinerary-title" : "visitor-tab-itinerary"}
           tabIndex={wideLayout ? undefined : 0} hidden={!itineraryVisible}>
@@ -2092,7 +2337,8 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                   {i > 0 && it.stops[i - 1].zone !== s.zone && (
                     <div className="walk"><Icon name="walk" size={15}/> {s.walk_min} د مشي{s.wait_min >= 5 ? <> · <Icon name="clock" size={14}/> انتظار {s.wait_min} د</> : ""}</div>
                   )}
-                  <div className="stop-card">
+                  <div className="stop-card has-art">
+                    <ActivityArt kind={activityKind(s.act_id)} image={activityImage(s.act_id)} label={s.name} />
                     <div className="s-time"><Icon name="clock" size={14}/><ItineraryTimeRange start={fmt(s.start)} end={fmt(s.end)} /></div>
                     <div className="s-name">{s.name}</div>
                     <div className="s-meta">
@@ -2141,16 +2387,52 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           <button type="button" className="directions-link map-directions" onClick={(event) => openDirections(undefined, event.currentTarget)}>اتجاهات المشي</button>
         </section>
 
-      <section id="visitor-panel-assistant" className="chat-dock" role="region" aria-labelledby="visitor-tab-assistant" tabIndex={0} hidden={selectedTab !== "assistant"}>
-        <div className="chat-header"><span className="chat-avatar" aria-hidden="true"><img src="/brand/mascot-head.webp" alt="" width={36} height={36} /></span><div><h2>مساعد ونيس</h2><small>اسأل عن الأنشطة والاتجاهات أو عدّل مسارك</small></div>{!isPitch && <button ref={voiceCallButtonRef} className="voice-call-btn" type="button" onClick={(event) => { voiceOpener.current = event.currentTarget; setVoiceTranscript(""); setVoiceReply(""); setVoiceError(""); setVoiceOpen(true); }} aria-label="ابدأ محادثة صوتية مع ونيس"><Icon name="mic" size={16}/> مكالمة</button>}</div>
+      <section id="visitor-panel-assistant" className={`home-panel${homeView === "chat" ? " chat-dock chat-screen" : ""}`} data-view={homeView} role="region" aria-labelledby="visitor-tab-assistant" tabIndex={0} hidden={selectedTab !== "assistant"}>
+        {homeView === "hub" ? (
+          <div className="start-hub">
+            <div className="start-logo"><BrandLogo height={64} wordmark label="ونيس" /></div>
+            <h2>ابدأ مع ونيس</h2>
+            <p className="start-tagline">{it ? "اسأل، عدّل مسارك، أو خلّه يدلّك. اختر الطريقة اللي تريحك." : "قل لونيس مين معك ووش تحبون، ويرتّب لك مسارك."}</p>
+            <Mascot mood="wave" height={150} className="start-mascot" />
+            <div className="start-choices" role="group" aria-label="اختر طريقة تفاعلك مع ونيس">
+              <button type="button" className="start-choice is-chat" onClick={() => { setHomeView("chat"); void ensureStarterPlan(); requestAnimationFrame(() => chatInputRef.current?.focus()); }}>
+                <span className="start-choice-icon" aria-hidden="true"><Icon name="chat" size={24}/></span>
+                <span className="start-choice-text"><b>شات مع ونيس</b><small>اكتب، اسأل، وخطّط لتجربتك</small></span>
+                <span className="start-choice-go" aria-hidden="true"><Icon name="chevron" size={18}/></span>
+              </button>
+              {!isPitch && (
+                <button type="button" className="start-choice is-call" onClick={(event) => openCall(event.currentTarget, true)}>
+                  <span className="start-choice-icon" aria-hidden="true"><Icon name="phone" size={24}/></span>
+                  <span className="start-choice-text"><b>مكالمة مع ونيس</b><small>تكلّم بصوتك وابدأ التخطيط مباشرة</small></span>
+                  <span className="start-choice-go" aria-hidden="true"><Icon name="chevron" size={18}/></span>
+                </button>
+              )}
+            </div>
+            {headline && it && (
+              <button type="button" className="start-next" onClick={() => selectTab("itinerary")}>
+                <ActivityArt kind={activityKind(headline.act_id)} />
+                <span><small>{closedPreview ? "أول محطة" : current ? "محطتك الآن" : "خطوتك الجاية"}</small><b>{headline.name}</b></span>
+                <span dir="ltr">{fmt(headline.start)}</span>
+              </button>
+            )}
+          </div>
+        ) : <>
+        <div className="chat-header">
+          <button type="button" className="btn-icon chat-back" aria-label="رجوع إلى «ابدأ مع ونيس»" onClick={() => setHomeView("hub")}><Icon name="chevron" size={20}/></button>
+          <span className="chat-avatar" aria-hidden="true"><img src="/brand/mascot-head.webp" alt="" width={36} height={36} /></span>
+          <div><h2>ونيس</h2><small className="chat-live"><i /> {chatPending ? "يكتب…" : "متصل الآن"}</small></div>
+          {!isPitch && <button ref={voiceCallButtonRef} className="voice-call-btn" type="button" onClick={(event) => openCall(event.currentTarget)} aria-label="ابدأ محادثة صوتية مع ونيس"><Icon name="phone" size={16}/> مكالمة</button>}
+        </div>
         <div className="chat-log" ref={chatLog} role="log" aria-label="المحادثة" tabIndex={0}>
           {messages.map((m, i) => m.role === "typing" ? (
             <div key={i} className="bubble agent typing" aria-label="ونيس يكتب"><i/><i/><i/></div>
-          ) : <div key={i} className={`bubble ${m.role}`}>
+          ) : <div key={i} className={`bubble ${m.role}${m.options?.length || m.plan?.length ? " has-cards" : ""}`}>
             <div>{m.text}</div>
-            {m.ui?.length ? <A2uiSurface messages={m.ui} onAction={handleA2uiAction} disabled={Boolean(surfaceProposalId(m.ui)) && (replanBusy || surfaceProposalId(m.ui) !== replanProposal?.id)} /> : m.options?.length ? <div className="chat-options">
-              {m.options.map((option) => { const isActivity = option.kind !== "zone" && option.kind !== "location"; const inRoute = isActivity && Boolean(it?.stops.some((stop) => stop.act_id === option.id)); const canAdd = isActivity && !inRoute && option.priceSar != null && option.eligibilityKnown !== false; return <div key={option.id} className="chat-option-actions">
+            {m.ui?.length ? <A2uiSurface messages={m.ui} onAction={handleA2uiAction} disabled={Boolean(surfaceProposalId(m.ui)) && (replanBusy || surfaceProposalId(m.ui) !== replanProposal?.id)}
+              art={(itemId, kind) => <ActivityArt kind={kind === "place" ? (eventCatalog?.zones.some((zone) => zone.id === itemId) ? "zone" : "place") : activityKind(itemId)} image={kind === "activity" ? activityImage(itemId) : null} />} /> : m.options?.length ? <div className="chat-options chat-cards">
+              {m.options.map((option) => { const isActivity = option.kind !== "zone" && option.kind !== "location"; const inRoute = isActivity && Boolean(it?.stops.some((stop) => stop.act_id === option.id)); const canAdd = isActivity && !inRoute && option.priceSar != null && option.eligibilityKnown !== false; return <div key={option.id} className="chat-option-actions chat-card">
                 <button type="button" aria-label={canAdd ? `أضف ${option.name} لمساري` : undefined} onClick={(event) => { if (option.kind === "zone") openDirections(option.id, event.currentTarget); else if (option.kind === "location") { setMapFocus(option.id); revealMap(); } else if (canAdd) void sendChat(`أضف ${option.name} لمساري`); else { setMapFocus(option.zone ?? null); revealMap(); } }}>
+                  <ActivityArt kind={option.kind === "zone" ? "zone" : option.kind === "location" ? "place" : activityKind(option.id)} image={activityImage(option.id)} label={option.name} />
                   <span>{option.name}</span><small>{option.kind === "zone" ? "منطقة داخل الفعالية" : option.kind === "location" ? `${option.zoneName ?? "داخل الموقع"} · عرض على الخريطة` : `${option.priceSar == null ? "السعر غير مؤكد" : option.priceSar ? `${option.priceSar} ريال تقريبًا` : "مجانًا"}${option.eligibilityKnown === false ? " · شروط المشاركة غير مؤكدة" : ""} · ${option.durationMin ?? 0} د`}</small>
                   {option.reasons?.length ? <em className="opt-reasons">{option.reasons.slice(0, 2).join(" · ")}</em> : null}
                   {inRoute ? <em className="opt-cta opt-cta-done">✓ في مسارك</em> : canAdd ? <em className="opt-cta">＋ أضف لمساري</em> : null}
@@ -2158,6 +2440,29 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
                 {!isPitch && <button type="button" className="directions-link" aria-label={`اتجاهات المشي إلى ${option.name}`} onClick={(event) => openDirections(option.id, event.currentTarget)}>اتجاهات</button>}
               </div>; })}
             </div> : null}
+            {m.plan?.length ? (
+              <div className="chat-plan">
+                <p className="chat-plan-saved"><Icon name="plan" size={16}/> الخطة في «مساري»</p>
+                <ol className="chat-plan-stops" aria-label="محطات الخطة">
+                  {m.plan.map((stop, index) => (
+                    <li key={`${stop.act_id}-${index}`}>
+                      <ActivityArt kind={activityKind(stop.act_id)} image={activityImage(stop.act_id)} label={stop.name} />
+                      <b>{stop.name}</b>
+                      <small dir="ltr"><Icon name="clock" size={12}/> {fmt(stop.start)}</small>
+                    </li>
+                  ))}
+                </ol>
+                {/* The actions work on the visitor's current plan, so only the latest plan card carries them. */}
+                {i === lastPlanMessage && (
+                  <div className="chat-plan-actions">
+                    <button type="button" onClick={() => { setChatInput(""); chatInputRef.current?.focus(); showToast("قل لي وش تبي تغيّر، مثل: «بدّل العرض» أو «شيل آخر محطة»."); }}><Icon name="pencil" size={15}/> تعديل الخطة</button>
+                    <button type="button" onClick={() => selectTab("itinerary")}><Icon name="plan" size={15}/> عرض الجدول</button>
+                    <button type="button" onClick={() => showMap()}><Icon name="map" size={15}/> على الخريطة</button>
+                    {!isPitch && upcoming && <button type="button" onClick={(event) => void startAirGuide(event.currentTarget, upcoming.act_id)}><Icon name="walk" size={15}/> توجيه الآن</button>}
+                  </div>
+                )}
+              </div>
+            ) : null}
             {m.directions && !isPitch && (
               <div className="chat-guide">
                 <span><Icon name="walk" size={14}/> {m.directions.totalWalkMin} د مشي{m.directions.avoided.length ? ` · تجنبنا زحمة ${m.directions.avoided.join("، ")}` : ""}</span>
@@ -2186,10 +2491,13 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
           <button onClick={(event) => openReasons(event.currentTarget)}><Icon name="question" size={14}/> ليش كذا؟</button>
         </div>
         <form className="composer" onSubmit={(event) => { event.preventDefault(); void sendChat(chatInput); }}>
+          <button type="button" className="composer-tool" aria-label="اعثر على مكان" onClick={() => setShowPlaces(true)}><Icon name="pin" size={18}/></button>
+          <button type="button" className="composer-tool" aria-label={chatListening ? "أسمعك…" : "تكلّم بدل الكتابة"} aria-pressed={chatListening} onClick={dictateChat}><Icon name="mic" size={18}/></button>
           <input ref={chatInputRef} aria-label="اكتب طلبك" dir="auto" value={chatInput} onChange={(e) => setChatInput(e.target.value)}
             placeholder="مثال: بدّل العجلة الدوارة" />
           <button type="submit" aria-label="إرسال" disabled={!chatInput.trim() || chatPending}><Icon name="send" size={18}/></button>
         </form>
+        </>}
       </section>
       <section id="visitor-panel-nearby" className="visitor-nearby" role="region" aria-labelledby="visitor-tab-nearby" tabIndex={0} hidden={selectedTab !== "nearby"}>
         {modeRef.current === "durable"
@@ -2212,33 +2520,39 @@ function VisitorGuide({ eventSlug: suppliedEventSlug, allowLegacyFallback: suppl
       <ToastHost toasts={toasts} dismiss={dismissToast} />
 
       {voiceOpen && !dirSheet && !showWhy && (
-        <VisitorDialog label="محادثة صوتية مع ونيس" className="voice-agent" opener={voiceOpener.current} onClose={closeVoice}>
-            <div className={`voice-orb is-${voiceState}`} aria-hidden="true"><span>و</span><i/><i/><i/></div>
-            <p role="status">{voiceState === "listening" ? "أسمعك… تكلم براحتك" : voiceState === "thinking" ? "ثواني، أجهّز ردّي…" : voiceState === "speaking" ? "ونيس يرد عليك…" : voiceState === "paused" ? "توقفت المكالمة. اضغط استئناف إذا تبي تكمل." : voiceState === "error" ? voiceError || "تعذر تشغيل الصوت. تأكد من إذن الميكروفون أو كمل بالكتابة." : "ونيس يرد بالصوت، ثم يرجع يسمعك إلى أن تنهي المكالمة."}</p>
-            {voiceTranscript && <div className="voice-transcript"><strong>أنت</strong> {voiceTranscript}</div>}
-            {voiceReply && <div className="voice-transcript" aria-live="polite"><strong>ونيس</strong> {voiceReply}</div>}
-            <div className="voice-agent-actions">
-              {voiceState === "listening" || voiceState === "thinking" || voiceState === "speaking"
-                ? <>
-                    {voiceMode === "realtime" && <button type="button" className="voice-mute" aria-pressed={voiceMuted} onClick={() => {
-                      const next = !voiceMuted;
-                      realtimeCallRef.current?.setMuted(next);
-                      setVoiceMuted(next);
-                    }}>{voiceMuted ? <><Icon name="mic" size={16}/> إلغاء الكتم</> : <><Icon name="micOff" size={16}/> كتم</>}</button>}
-                    <button type="button" className="voice-stop" onClick={closeVoice}>إنهاء المكالمة</button>
-                  </>
-                : <button type="button" className="voice-start" onClick={() => void startVoice()}><Icon name="mic" size={18}/> {voiceState === "paused" || voiceState === "error" ? "استئناف المكالمة" : "ابدأ المكالمة"}</button>}
-            </div>
-            <button type="button" className="link-btn voice-text-link" onClick={() => {
-              closeVoice();
-              setActiveTab("assistant");
-              // Chose typing before the call built anything: the safe starter plan, as the text path promises.
-              void ensureStarterPlan();
-              requestAnimationFrame(() => chatInputRef.current?.focus());
-            }}>كمّل بالكتابة</button>
-            <small>{voiceMode === "realtime"
-              ? "مكالمة حية: تقدر تقاطع ونيس وتتكلم براحتك. صوتك يمر لمزوّد الذكاء الاصطناعي ولا نحفظه، وأي تعديل على المسار يحتاج موافقتك."
-              : "أثناء المكالمة يرسل المتصفح كلامك كنص إلى ونيس بعد كل مرة تتكلم فيها. أي تعديل على المسار يحتاج موافقتك."}</small>
+        <VisitorDialog label="محادثة صوتية مع ونيس" className="voice-agent call-dialog" opener={voiceOpener.current} onClose={closeVoice}>
+          <CallScreen
+            state={voiceState} mode={voiceMode} working={callWorking} muted={voiceMuted} speakerMuted={speakerMuted}
+            heard={voiceTranscript} error={voiceError} stage={callView} savedPulse={callSavedPulse} eventName={eventName}
+            meters={voiceMode === "realtime" ? () => realtimeCallRef.current?.meters() ?? { mic: null, voice: null } : null}
+            map={it || callStage.kind === "nav"
+              ? <VenueGeoMap stops={it?.stops ?? []} eventSlug={eventSlug} focusId={callStage.kind === "nav" && !mapPath ? callStage.targetId : null} path={callStage.kind === "nav" ? mapPath : null}
+                  me={callStage.kind === "nav" && airGuide ? { x: airGuide.x, y: airGuide.y, target: airGuide.target, heading: airGuide.heading ?? null, accuracyM: airGuide.accuracyM ?? null } : null} crowd={liveCrowd} />
+              : null}
+            onStart={() => void startVoice()}
+            onEnd={closeVoice}
+            onMute={voiceMode === "realtime" ? () => {
+              const next = !voiceMuted;
+              realtimeCallRef.current?.setMuted(next);
+              setVoiceMuted(next);
+            } : null}
+            onSpeaker={() => {
+              const next = !speakerMuted;
+              speakerMutedRef.current = next;
+              realtimeCallRef.current?.setSpeakerMuted(next);
+              setSpeakerMuted(next);
+            }}
+            onChat={callToChat}
+            onGuide={!isPitch && upcoming ? () => void startCallNav(upcoming.act_id, upcoming.name) : null}
+            onCard={(card) => {
+              if (card.canAdd) {
+                // The engine adds it (or proposes the change); in a live call WANEES then says what happened.
+                void sendChat(`أضف ${card.name} لمساري`, true).then((reply) => { if (reply?.text) realtimeCallRef.current?.notify(reply.text); });
+              } else if (!isPitch) void startCallNav(card.id, card.name);
+            }}
+            onSimulate={() => { if (callRoute) showDirectionsOnMap(callRoute, { fix: null, simulate: true, inCall: true }); }}
+            onProposal={(decision) => void resolveReplanProposal(decision)}
+          />
         </VisitorDialog>
       )}
 

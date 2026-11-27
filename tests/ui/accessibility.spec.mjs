@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+// Redesign: the first screen is «ابدأ مع ونيس»; the message box opens from «شات مع ونيس».
+async function openingBox(page) {
+  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const chat = page.getByRole("button", { name: /^شات مع ونيس/ });
+  await box.or(chat).first().waitFor();
+  if (!(await box.isVisible())) await chat.click();
+  return box;
+}
+
+
 // A dependency-free accessibility sweep (WCAG 2.2 A/AA basics) over the main visitor and organizer screens:
 // Arabic RTL document, an accessible name for every control, alt text, unique ids, labelled form fields and
 // a 24 × 24 px minimum target for buttons (2.5.8) and text contrast (1.4.3). It complements, not replaces, a manual screen-reader pass.
@@ -156,7 +166,7 @@ for (const [label, url] of publicPages) {
 test("accessibility basics: a built plan and the organizer workspace", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${visitor}/e/boulevard-world-demo`);
-  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const box = (await openingBox(page));
   await expect(box).toBeEnabled();
   await box.fill("طلعة شباب، عندنا ساعتين");
   await page.getByRole("button", { name: /^يلا/ }).click();
@@ -181,7 +191,7 @@ const nightPurple = "rgb(26, 11, 61)";
 async function buildPlan(page) {
   await page.route("https://server.arcgisonline.com/**", (route) => route.abort());
   await page.goto(`${visitor}/e/boulevard-world-demo`);
-  await page.getByRole("textbox", { name: "قل لي وش بالك" }).fill("طلعة شباب، عندنا ساعتين");
+  await (await openingBox(page)).fill("طلعة شباب، عندنا ساعتين");
   await page.getByRole("button", { name: /^يلا/ }).click();
   await expect(page.getByRole("heading", { name: "مسارك الليلة" })).toBeVisible();
 }
@@ -192,7 +202,7 @@ test.describe("on a phone set to dark", () => {
   test("Wanees stays light on a dark phone until the visitor chooses otherwise", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`${visitor}/e/boulevard-world-demo`);
-    await expect(page.getByRole("textbox", { name: "قل لي وش بالك" })).toBeEnabled();
+    await expect((await openingBox(page))).toBeEnabled();
     expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe("light");
     expect(await pageBackground(page)).toBe("rgb(255, 255, 255)");
     expect(await page.locator('meta[name="theme-color"]').first().getAttribute("content")).toBe("#ffffff");
@@ -205,13 +215,13 @@ test.describe("on a phone set to dark", () => {
     await page.goto(`${visitor}/e/boulevard-world-demo`);
     // Following the phone, the page sends one bar colour per phone setting; the dark one is the night purple.
     expect(await page.locator('meta[name="theme-color"][media*="dark"]').getAttribute("content")).toBe("#1a0b3d");
-    await expect(page.getByRole("textbox", { name: "قل لي وش بالك" })).toBeEnabled();
+    await expect((await openingBox(page))).toBeEnabled();
     await expect.poll(() => pageBackground(page)).toBe(nightPurple);
     await expectAccessible(page, "dark welcome");
     await buildPlan(page);
     await expectAccessible(page, "dark plan");
     const nav = page.getByRole("navigation", { name: "التنقل الرئيسي" });
-    for (const tab of ["الخريطة", "ونيس", "حولي", "أنا"]) {
+    for (const tab of ["الخريطة", "الرئيسية", "حولي", "أنا"]) {
       await nav.getByRole("button", { name: new RegExp(`^${tab}`) }).click();
       await expect(nav.getByRole("button", { name: new RegExp(`^${tab}`) })).toHaveAttribute("aria-current", "page");
       await expectAccessible(page, `dark ${tab}`);

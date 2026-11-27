@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+// Redesign: the first screen is «ابدأ مع ونيس»; the message box opens from «شات مع ونيس».
+async function openingBox(page) {
+  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const chat = page.getByRole("button", { name: /^شات مع ونيس/ });
+  await box.or(chat).first().waitFor();
+  if (!(await box.isVisible())) await chat.click();
+  return box;
+}
+
+
 // Live walking guidance (audit item 0.2): with the venue's live guidance on, a phone whose GPS is
 // inside Boulevard World gets the live AirTag-style guide, not the simulated walk.
 const visitor = process.env.WANEES_BASE_URL ?? "http://127.0.0.1:3100";
@@ -21,7 +31,7 @@ function navTab(page, name) {
 async function buildItinerary(page) {
   await page.goto(`${visitor}/e/boulevard-world-demo`);
   // Audit 1.1: no quiz. One sentence starts the visit and the plan appears.
-  await page.getByRole("textbox", { name: "قل لي وش بالك" }).fill("طلعة شباب، عندنا ساعتين");
+  await (await openingBox(page)).fill("طلعة شباب، عندنا ساعتين");
   await page.getByRole("button", { name: /^يلا/ }).click();
   await expect(page.getByRole("heading", { name: "مسارك الليلة" })).toBeVisible();
 }
@@ -33,7 +43,7 @@ test("inside the venue, «دلّني» opens the live guide from the phone's GPS
   // Standing in the Saudi zone, far from the first stop, with a crowd-grade 30 m fix.
   await context.setGeolocation({ ...planToGps(-115, 479), accuracy: 30 });
   await buildItinerary(page);
-  await navTab(page, "ونيس").click();
+  await navTab(page, "الرئيسية").click();
   await page.getByRole("button", { name: /ضعت! دلّني/ }).click();
   const guide = page.getByRole("dialog", { name: /^التوجيه إلى/ });
   await expect(guide).toBeVisible();
@@ -51,7 +61,7 @@ test("outside the venue, the guide offers a simulated walk instead of a dead end
   await context.grantPermissions(["geolocation"], { origin: new URL(visitor).origin });
   await context.setGeolocation({ latitude: 24.5, longitude: 46.6, accuracy: 10 });
   await buildItinerary(page);
-  await navTab(page, "ونيس").click();
+  await navTab(page, "الرئيسية").click();
   await page.getByRole("button", { name: /ضعت! دلّني/ }).click();
   const directions = page.getByRole("dialog", { name: "اتجاهات المشي" });
   await expect(directions).toBeVisible();

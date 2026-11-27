@@ -361,7 +361,7 @@ for (run = 1; run <= runs; run += 1) {
     if (firstCall.status !== 200) problems.push(`first call HTTP ${firstCall.status} ${JSON.stringify(firstCall.d?.error ?? {})}`);
     else {
       const greeting = firstCall.d?.data?.greeting ?? "";
-      if (!/جاي لحالك ولا مع الأهل/.test(greeting)) problems.push(`no-plan greeting is not the guide's opening: ${greeting}`);
+      if (!/مين معك ووش ودّكم فيه/.test(greeting)) problems.push(`no-plan greeting is not the guide's opening: ${greeting}`);
       if ((greeting.match(/؟/g) ?? []).length !== 1) problems.push(`opening asks ${(greeting.match(/؟/g) ?? []).length} questions, expected 1`);
       if (firstCall.d?.data?.callCount !== 1) problems.push(`callCount ${firstCall.d?.data?.callCount}, expected 1`);
     }

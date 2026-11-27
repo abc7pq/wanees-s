@@ -1,5 +1,15 @@
 import { expect, test } from "@playwright/test";
 
+// Redesign: the first screen is «ابدأ مع ونيس»; the message box opens from «شات مع ونيس».
+async function openingBox(page) {
+  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const chat = page.getByRole("button", { name: /^شات مع ونيس/ });
+  await box.or(chat).first().waitFor();
+  if (!(await box.isVisible())) await chat.click();
+  return box;
+}
+
+
 // The visitor app behaves like a phone app: the visit starts with one sentence (no questionnaire),
 // the first screen fits a small phone, every stop has a ⋯ menu in a bottom sheet that the phone's
 // Back button closes, and no screen scrolls sideways.
@@ -13,7 +23,7 @@ async function sideways(page) {
 test("a small phone opens on a chat, with no questionnaire, and the message box above the fold", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   await page.goto(`${visitor}/e/boulevard-world-demo`);
-  const box = page.getByRole("textbox", { name: "قل لي وش بالك" });
+  const box = (await openingBox(page));
   await expect(box).toBeEnabled();
   for (const question of ["مين معك الليلة؟", "وش مزاجك الليلة؟", "ميزانيتك الليلة؟", "كم بنقعد؟"]) {
     await expect(page.getByText(question)).toHaveCount(0);
@@ -32,7 +42,7 @@ test("every stop has a ⋯ menu; Back closes it and «ليش هذي المحطة
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("https://server.arcgisonline.com/**", (route) => route.abort());
   await page.goto(`${visitor}/e/boulevard-world-demo`);
-  await page.getByRole("textbox", { name: "قل لي وش بالك" }).fill("طلعة شباب، عندنا ساعتين");
+  await (await openingBox(page)).fill("طلعة شباب، عندنا ساعتين");
   await page.getByRole("button", { name: /^يلا/ }).click();
   await expect(page.getByRole("heading", { name: "مسارك الليلة" })).toBeVisible();
 
@@ -54,10 +64,10 @@ test("every stop has a ⋯ menu; Back closes it and «ليش هذي المحطة
   await more.last().click();
   await sheet.getByRole("button", { name: "ليش هذي المحطة؟" }).click();
   await expect(sheet).toBeHidden();
-  await expect(nav(page).getByRole("button", { name: /^ونيس/ })).toHaveAttribute("aria-current", "page");
+  await expect(nav(page).getByRole("button", { name: /^الرئيسية/ })).toHaveAttribute("aria-current", "page");
   await expect(page.getByText(`ليش اخترت ${stopName}؟`)).toBeVisible();
 
-  for (const tab of ["مساري", "الخريطة", "ونيس", "حولي", "أنا"]) {
+  for (const tab of ["مساري", "الخريطة", "الرئيسية", "حولي", "أنا"]) {
     await nav(page).getByRole("button", { name: new RegExp(`^${tab}`) }).click();
     expect(await sideways(page), tab).toBeLessThanOrEqual(0);
   }
@@ -74,7 +84,7 @@ test("after the venue closes, «كيف كانت ليلتك مع ونيس؟» sho
     await route.fulfill({ response, json: body });
   });
   await page.goto(`${visitor}/e/boulevard-world-demo`);
-  await page.getByRole("textbox", { name: "قل لي وش بالك" }).fill("طلعة شباب، عندنا ساعتين");
+  await (await openingBox(page)).fill("طلعة شباب، عندنا ساعتين");
   await page.getByRole("button", { name: /^يلا/ }).click();
   await nav(page).getByRole("button", { name: /^مساري/ }).click();
   const card = page.getByRole("group", { name: "كيف كانت ليلتك مع ونيس؟" });
