@@ -342,7 +342,9 @@ jobs:
           WANEES_BASE_URL: http://127.0.0.1:3100
           WANEES_ADMIN_BASE_URL: http://127.0.0.1:3200
       - name: Run the agent eval on the sample festival (engine drafts, no model key)
-        run: npm run ai:agent-eval -- http://127.0.0.1:3100 sample-festival
+        run: |
+          node scripts/agent-eval-clock-test.mjs
+          npm run ai:agent-eval -- http://127.0.0.1:3100 sample-festival
       - name: Publish a second venue catalog in the test database
         run: node scripts/catalog-publication-smoke.mjs
       - name: Run production concurrency smoke
